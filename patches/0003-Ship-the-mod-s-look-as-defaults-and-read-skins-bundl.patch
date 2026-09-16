@@ -1,7 +1,7 @@
 From a91c90e5f577e803af344d6d113a98732fd4f77a Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Wed, 16 Sep 2026 16:31:10 -0400
-Subject: [PATCH 3/3] Ship the mod's look as defaults and read skins bundled in
+Subject: [PATCH 3/4] Ship the mod's look as defaults and read skins bundled in
  res/skins
 
 A fresh install now starts with the Navy Gold skin, the Friendly

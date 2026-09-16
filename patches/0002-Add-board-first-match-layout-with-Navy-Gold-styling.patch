@@ -1,7 +1,7 @@
 From ba4a56fab6a2426ec3cacaed4889830eae56135f Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Wed, 16 Sep 2026 15:51:00 -0400
-Subject: [PATCH 2/3] Add board-first match layout with Navy Gold styling
+Subject: [PATCH 2/4] Add board-first match layout with Navy Gold styling
 
 - Separate layout file (match_arena.xml) holding only the fields, hand,
   card preview and prompt; written on first use and selected per match

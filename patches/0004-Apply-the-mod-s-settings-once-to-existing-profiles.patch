@@ -1,0 +1,75 @@
+From 53dcac866899245aa4547f7f0ab36d1392ae5a4d Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 16:53:37 -0400
+Subject: [PATCH 4/4] Apply the mod's settings once to existing profiles
+
+Players who already used stock Forge have every setting saved, so the
+mod's new defaults never reached them. The first time the mod runs on a
+profile it now sets the skin, mulligan rule, play summaries, highlights,
+token row, update checks and all Arena-style switches to the mod's
+defaults, then records MOD_SETTINGS_VERSION so later changes stick.
+---
+ .../properties/ForgePreferences.java          | 40 +++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+index b5377a50cb..897e0c26bd 100644
+--- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
++++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+@@ -131,6 +131,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_ARENA_OPPONENT_HAND ("true"),
+         UI_ARENA_STACK_CARDS ("true"),
+         UI_ARENA_LAYOUT ("true"),
++        MOD_SETTINGS_VERSION ("0"),
+         UI_PAUSE_WHILE_MINIMIZED("false"),
+         UI_DISPLAY_CURRENT_COLORS(ForgeConstants.DISP_CURRENT_COLORS_NEVER),
+         UI_FILTER_LANDS_BY_COLOR_IDENTITY("true"),
+@@ -428,6 +429,45 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+     /** Instantiates a ForgePreferences object. */
+     public ForgePreferences() {
+         super(ForgeConstants.MAIN_PREFS_FILE, FPref.class);
++        applyModSettings();
++    }
++
++    // Raise when the mod ships new settings that existing profiles should pick up once.
++    private static final int MOD_SETTINGS_LEVEL = 1;
++
++    private static final FPref[] MOD_SETTINGS = {
++            FPref.UI_SKIN, FPref.MULLIGAN_RULE, FPref.UI_STACK_EFFECT_NOTIFICATION_POLICY,
++            FPref.UI_SHOW_ACTIONABLE_HIGHLIGHTS, FPref.UI_TOKENS_IN_SEPARATE_ROW,
++            FPref.CHECK_SNAPSHOT_AT_STARTUP, FPref.AUTO_UPDATE,
++            FPref.UI_PLAY_MATS, FPref.UI_CARD_DEPTH_EFFECTS, FPref.UI_ARENA_PLAYABLE_GLOW,
++            FPref.UI_ARENA_TURN_BANNER, FPref.UI_ARENA_LIFE_POPUPS, FPref.UI_ARENA_BUTTONS,
++            FPref.UI_ARENA_HAND_FAN, FPref.UI_ARENA_OPPONENT_HAND, FPref.UI_ARENA_STACK_CARDS,
++            FPref.UI_ARENA_LAYOUT };
++
++    /**
++     * The first time this mod runs on a profile (including one carried over from stock Forge),
++     * switch its settings to the mod's defaults once. Later changes by the player are kept.
++     */
++    private void applyModSettings() {
++        int applied;
++        try {
++            applied = Integer.parseInt(getPref(FPref.MOD_SETTINGS_VERSION));
++        } catch (final NumberFormatException e) {
++            applied = 0;
++        }
++        if (applied >= MOD_SETTINGS_LEVEL) {
++            return;
++        }
++        for (final FPref pref : MOD_SETTINGS) {
++            setPref(pref, pref.getDefault());
++        }
++        setPref(FPref.MOD_SETTINGS_VERSION, String.valueOf(MOD_SETTINGS_LEVEL));
++        // on a brand-new profile this runs before Forge creates its folders
++        final java.io.File dir = new java.io.File(ForgeConstants.MAIN_PREFS_FILE).getParentFile();
++        if (dir != null) {
++            dir.mkdirs();
++        }
++        save();
+     }
+ 
+     /** Parse the custom log types preference into a Set. */
+-- 
+2.43.0
+

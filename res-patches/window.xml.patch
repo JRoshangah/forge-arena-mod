@@ -1,0 +1,7 @@
+--- a/res/defaults/window.xml
++++ b/res/defaults/window.xml
+@@ -1,2 +1,2 @@
+ <?xml version="1.0"?>
+-<layout x="0" y="0" w="800" h="600" state="6"></layout>
+\ No newline at end of file
++<layout x="0" y="0" w="1280" h="720" max="1" fs="0"></layout>

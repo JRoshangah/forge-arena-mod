@@ -7,7 +7,7 @@ A modded build of [Forge](https://github.com/Card-Forge/forge), the free Magic: 
 ## Download and play
 
 1. **Install Java 17 or newer.** If you don't have it, get [Temurin](https://adoptium.net) (choose the latest LTS for your system).
-2. **Download** `forge-arena-mod-1.0.zip` from the [latest release](../../releases/latest) (about 225 MB) and unzip it anywhere.
+2. **Download** `forge-arena-mod-1.1.zip` from the [latest release](../../releases/latest) (about 225 MB) and unzip it anywhere.
 3. **Start Forge** from the unzipped folder:
    - **Windows:** double-click `forge.exe`
    - **macOS:** double-click `forge.command`. The first time, right-click it and choose **Open**.
@@ -15,6 +15,20 @@ A modded build of [Forge](https://github.com/Card-Forge/forge), the free Magic: 
 4. Go to **Sanctioned Formats → Constructed**, pick decks and play.
 
 Card images download automatically the first time each card appears, so the first games load a little slower.
+
+### Already have Forge?
+
+Your decks, quest and gauntlet progress, achievements, settings and downloaded card images carry over: Forge keeps them in your user profile, not in the game folder. It's a good idea to back that folder up first:
+
+| System | Decks, settings, progress | Card images |
+|---|---|---|
+| Windows | `%APPDATA%\Forge` | `%LOCALAPPDATA%\Forge\Cache` |
+| macOS | `~/Library/Application Support/Forge` | `~/Library/Caches/Forge` |
+| Linux | `~/.forge` | `~/.cache/forge` |
+
+On its first start the mod switches on its own settings once, even if you had chosen something else before: the Navy Gold skin, Friendly mulligan, play summaries, playable-card highlights, tokens in their own row, no update checks, and every Arena-style option. Your player name, decks and all other settings stay as they were. Anything you change afterwards is kept.
+
+If your current Forge is newer than this mod's base version (see below), decks with cards from newer sets may be missing those cards here.
 
 > **Don't use Forge's built-in updater.** It installs stock Forge over this mod. To get a newer version of the mod, download the new zip from this page.
 
@@ -69,8 +83,8 @@ Forge is licensed under the GNU GPL v3, and so is this mod (see [LICENSE](LICENS
 
 | Path | What it contains |
 |---|---|
-| `patches/` | The Java changes as three `git format-patch` files, to apply on top of Forge commit `53a1037` |
-| `res-patches/` | Wording changes to `res/languages/en-US.properties` |
+| `patches/` | The Java changes as `git format-patch` files, to apply on top of Forge commit `53a1037` |
+| `res-patches/` | Wording changes to `res/languages/en-US.properties`, and `res/defaults/window.xml` so a first start opens maximized |
 | `skins/navy_gold/` | The Navy Gold skin, which goes in `res/skins/navy_gold/` |
 | `tools/make_navy_gold.py` | Script that generates the skin (needs Python 3 and Pillow) |
 
@@ -81,7 +95,7 @@ git clone https://github.com/Card-Forge/forge.git
 cd forge
 git checkout -b arena-mod 53a103721d627ecb76a2ea52b2febe894844f288
 git am /path/to/forge-arena-mod/patches/*.patch
-git apply /path/to/forge-arena-mod/res-patches/en-US.properties.patch --directory=forge-gui
+git apply --directory=forge-gui /path/to/forge-arena-mod/res-patches/*.patch
 mkdir -p forge-gui/res/skins/navy_gold
 cp /path/to/forge-arena-mod/skins/navy_gold/* forge-gui/res/skins/navy_gold/
 ```
