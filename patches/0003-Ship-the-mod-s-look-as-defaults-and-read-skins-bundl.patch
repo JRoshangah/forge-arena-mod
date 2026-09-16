@@ -1,0 +1,125 @@
+From a91c90e5f577e803af344d6d113a98732fd4f77a Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 16:31:10 -0400
+Subject: [PATCH 3/3] Ship the mod's look as defaults and read skins bundled in
+ res/skins
+
+A fresh install now starts with the Navy Gold skin, the Friendly
+mulligan rule, the summary feed, playable-card highlights and tokens in
+their own row. FSkin also lists and loads skins placed in the game's
+res/skins folder, so the release zip can carry Navy Gold without a
+per-user cache step.
+---
+ .../src/main/java/forge/toolbox/FSkin.java    | 25 +++++++++++++++++--
+ .../properties/ForgePreferences.java          | 12 ++++-----
+ 2 files changed, 29 insertions(+), 8 deletions(-)
+
+diff --git a/forge-gui-desktop/src/main/java/forge/toolbox/FSkin.java b/forge-gui-desktop/src/main/java/forge/toolbox/FSkin.java
+index be872ea532..6ae37c1d79 100644
+--- a/forge-gui-desktop/src/main/java/forge/toolbox/FSkin.java
++++ b/forge-gui-desktop/src/main/java/forge/toolbox/FSkin.java
+@@ -1184,7 +1184,7 @@ public class FSkin {
+ 
+         // Non-default (preferred) skin name and dir.
+         preferredName = skinName.toLowerCase().replace(' ', '_');
+-        preferredDir = preferredName.equalsIgnoreCase("default") || preferredName.isEmpty() ? ForgeConstants.DEFAULT_SKINS_DIR : ForgeConstants.CACHE_SKINS_DIR + preferredName + "/";
++        preferredDir = preferredName.equalsIgnoreCase("default") || preferredName.isEmpty() ? ForgeConstants.DEFAULT_SKINS_DIR : skinDirFor(preferredName);
+ 
+         if (onInit) {
+             final File f = new File(preferredDir + ForgeConstants.SPLASH_BG_FILE);
+@@ -1484,9 +1484,28 @@ public class FSkin {
+      *
+      * @return the skins
+      */
++    /** A downloaded skin in the cache, or one shipped inside the game folder (res/skins). */
++    private static String skinDirFor(final String dirName) {
++        final File cached = new File(ForgeConstants.CACHE_SKINS_DIR + dirName);
++        final File bundled = new File(ForgeConstants.BASE_SKINS_DIR + dirName);
++        if (!cached.isDirectory() && bundled.isDirectory()) {
++            return bundled.getPath() + "/";
++        }
++        return ForgeConstants.CACHE_SKINS_DIR + dirName + "/";
++    }
++
+     public static List<String> getSkinDirectoryNames() {
+         final List<String> mySkins = new ArrayList<>();
+ 
++        final String[] bundled = new File(ForgeConstants.BASE_SKINS_DIR).list();
++        if (bundled != null) {
++            for (final String name : bundled) {
++                if (!name.equalsIgnoreCase("default") && new File(ForgeConstants.BASE_SKINS_DIR + name).isDirectory()) {
++                    mySkins.add(name);
++                }
++            }
++        }
++
+         final File dir = new File(ForgeConstants.CACHE_SKINS_DIR);
+         final String[] children = dir.list();
+         if (children == null) {
+@@ -1499,7 +1518,9 @@ public class FSkin {
+                 if (aChildren.equalsIgnoreCase(".DS_Store")) {
+                     continue;
+                 }
+-                mySkins.add(aChildren);
++                if (!mySkins.contains(aChildren)) {
++                    mySkins.add(aChildren);
++                }
+             }
+         }
+ 
+diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+index 58af0b93a7..b5377a50cb 100644
+--- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
++++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+@@ -92,10 +92,10 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_SEPARATE_COMBAT_STACKS("false"),
+         UI_GROUP_PERMANENTS ("default"),
+         UI_MAX_STACK_DEPTH ("4"),
+-        UI_TOKENS_IN_SEPARATE_ROW("false"),
++        UI_TOKENS_IN_SEPARATE_ROW("true"),
+         UI_SCALE_LARGER ("true"),
+         UI_RENDER_BLACK_BORDERS ("true"),
+-        UI_SHOW_ACTIONABLE_HIGHLIGHTS ("false"),
++        UI_SHOW_ACTIONABLE_HIGHLIGHTS ("true"),
+         UI_SHOW_AUTOTAP_PREVIEW ("false"),
+         UI_ACTIONABLE_HIGHLIGHT_COLOR ("66CCFF"),
+         UI_SHOW_LINKED_EXILE_CARDS ("true"),
+@@ -107,7 +107,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_SMALL_DECK_VIEWER ("false"),
+         UI_DETAILED_SPELLDESC_IN_PROMPT ("true"),
+         UI_GRAY_INACTIVE_TEXT ("true"),
+-        UI_SKIN ("Default"),
++        UI_SKIN ("Navy Gold"),
+         UI_CJK_FONT (""),
+         UI_TARGETING_OVERLAY ("2"),
+         UI_TIMED_TARGETING_OVERLAY_UPDATES ("true"),
+@@ -119,7 +119,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_MULTIPLAYER_FIELD_PANELS ("SPLIT"),
+         UI_CLOSE_ACTION ("NONE"),
+         UI_MANA_LOST_PROMPT ("false"),
+-        UI_STACK_EFFECT_NOTIFICATION_POLICY ("Never"),
++        UI_STACK_EFFECT_NOTIFICATION_POLICY ("Summary feed (non-blocking): opponents' plays"),
+         UI_LAND_PLAYED_NOTIFICATION_POLICY ("Never"),
+         UI_PLAY_MATS ("true"),
+         UI_CARD_DEPTH_EFFECTS ("true"),
+@@ -191,7 +191,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+ 
+         AUTO_UPDATE("none"),
+         USE_SENTRY("false"), // this controls whether automated bug reporting is done or not
+-        CHECK_SNAPSHOT_AT_STARTUP("true"),
++        CHECK_SNAPSHOT_AT_STARTUP("false"), // an update would replace this modded build with stock Forge
+         MAX_LOG_FILES("10"), // applied per category: up to N forge.*.log backups AND N network log entries
+ 
+         NEW_GAME_SCREEN("Constructed"),
+@@ -216,7 +216,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         ENFORCE_DECK_LEGALITY ("true"),
+         PERFORMANCE_MODE ("false"),
+         FILTERED_HANDS ("false"),
+-        MULLIGAN_RULE(MulliganDefs.getDefaultRule().name()),
++        MULLIGAN_RULE(MulliganDefs.MulliganRule.Friendly.name()),
+ 
+         UI_ANTE ("false"),
+         UI_ANTE_MATCH_RARITY ("false"),
+-- 
+2.43.0
+

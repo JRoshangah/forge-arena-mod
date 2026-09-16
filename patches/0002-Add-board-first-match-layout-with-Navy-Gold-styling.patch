@@ -1,0 +1,1931 @@
+From ba4a56fab6a2426ec3cacaed4889830eae56135f Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Wed, 16 Sep 2026 15:51:00 -0400
+Subject: [PATCH 2/3] Add board-first match layout with Navy Gold styling
+
+- Separate layout file (match_arena.xml) holding only the fields, hand,
+  card preview and prompt; written on first use and selected per match
+  while "Board-First Match Layout" is on.
+- ArenaRail: slim left column with Stack / Combat / Log toggles (stack
+  count badge) and the tool dock; ArenaDrawer slides those panels out
+  over the board.
+- Player plates on each board: round avatar with life badge and
+  targeting ring, name, compact zone counters, mana and extra counters
+  only when non-zero. PlayArea keeps a strip free for the plate and caps
+  card size.
+- One horizontal phase bar above your board showing the stops for the
+  player whose turn it is, with a switch for other players' stops.
+- Prompt shown as an action plate; cell tabs and outlines hidden.
+- Summary feed and stack cascade moved clear of the plates and bar.
+---
+ .../java/forge/gui/framework/FScreen.java     |   8 +-
+ .../java/forge/gui/framework/SLayoutIO.java   |   2 +
+ .../home/settings/CSubmenuPreferences.java    |   1 +
+ .../home/settings/VSubmenuPreferences.java    |   5 +
+ .../java/forge/screens/match/ArenaDrawer.java | 285 ++++++++++++++++++
+ .../java/forge/screens/match/ArenaFrame.java  | 212 +++++++++++++
+ .../forge/screens/match/ArenaPhaseBar.java    | 163 ++++++++++
+ .../java/forge/screens/match/ArenaRail.java   | 218 ++++++++++++++
+ .../forge/screens/match/BoardOverlay.java     |   5 +-
+ .../java/forge/screens/match/CMatchUI.java    |  24 +-
+ .../java/forge/screens/match/PlayFeed.java    |   3 +-
+ .../java/forge/screens/match/VMatchUI.java    |  31 +-
+ .../screens/match/views/ArenaFieldPanel.java  | 233 ++++++++++++++
+ .../forge/screens/match/views/VField.java     |  56 +++-
+ .../forge/screens/match/views/VPrompt.java    |  57 ++++
+ .../forge/toolbox/special/PhaseIndicator.java |  18 ++
+ .../forge/toolbox/special/PhaseLabel.java     |  79 +++++
+ .../toolbox/special/PlayerDetailsPanel.java   |  48 +++
+ .../main/java/forge/view/arcane/PlayArea.java |  16 +-
+ .../properties/FileLocation.java              |   2 +-
+ .../properties/ForgePreferences.java          |   1 +
+ 21 files changed, 1450 insertions(+), 17 deletions(-)
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/ArenaDrawer.java
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/ArenaPhaseBar.java
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/ArenaRail.java
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaFieldPanel.java
+
+diff --git a/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java b/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
+index 0531d0a77a..b9a19fcca6 100644
+--- a/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
++++ b/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
+@@ -263,12 +263,16 @@ public class FScreen {
+     }
+ 
+     public FileLocation getLayoutFile() {
++        if (isMatch && controller instanceof forge.screens.match.CMatchUI matchUI && matchUI.isArenaMode()) {
++            return forge.screens.match.ArenaFrame.LAYOUT_FILE;
++        }
+         return layoutFile;
+     }
+ 
+     public boolean deleteLayoutFile() {
+-        if (layoutFile == null) { return false; }
+-        return deleteLayoutFile(layoutFile);
++        final FileLocation file = getLayoutFile();
++        if (file == null) { return false; }
++        return deleteLayoutFile(file);
+     }
+     public static boolean deleteMatchLayoutFile() {
+         return deleteLayoutFile(ForgeConstants.MATCH_LAYOUT_FILE);
+diff --git a/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java b/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
+index 1b973cb01e..cd626d44ae 100644
+--- a/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
++++ b/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
+@@ -485,6 +485,8 @@ public final class SLayoutIO {
+             }
+         }
+ 
++        forge.screens.match.ArenaFrame.afterLayoutLoaded(screen);
++
+         // Rough bounds are all in place; resize the window.
+         SResizingUtil.resizeWindow();
+     }
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
+index 5229a03ac2..b6f719c3de 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
+@@ -153,6 +153,7 @@ public enum CSubmenuPreferences implements ICDoc {
+         lstControls.add(Pair.of(view.getCbTokensInSeparateRow(), FPref.UI_TOKENS_IN_SEPARATE_ROW));
+         lstControls.add(Pair.of(view.getCbPlayMats(), FPref.UI_PLAY_MATS));
+         lstControls.add(Pair.of(view.getCbCardDepthEffects(), FPref.UI_CARD_DEPTH_EFFECTS));
++        lstControls.add(Pair.of(view.getCbArenaLayout(), FPref.UI_ARENA_LAYOUT));
+         lstControls.add(Pair.of(view.getCbPlayableGlow(), FPref.UI_ARENA_PLAYABLE_GLOW));
+         lstControls.add(Pair.of(view.getCbTurnBanner(), FPref.UI_ARENA_TURN_BANNER));
+         lstControls.add(Pair.of(view.getCbLifePopups(), FPref.UI_ARENA_LIFE_POPUPS));
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+index 8ab7eace62..d67653b966 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+@@ -123,6 +123,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+     private final JCheckBox cbTokensInSeparateRow = new OptionsCheckBox(localizer.getMessage("cbTokensInSeparateRow"));
+     private final JCheckBox cbPlayMats = new OptionsCheckBox("Battlefield Play-Mats");
+     private final JCheckBox cbCardDepthEffects = new OptionsCheckBox("Card Shadows and Dimmed Tapped Cards");
++    private final JCheckBox cbArenaLayout = new OptionsCheckBox("Board-First Match Layout");
+     private final JCheckBox cbPlayableGlow = new OptionsCheckBox("Glowing Playable Cards");
+     private final JCheckBox cbTurnBanner = new OptionsCheckBox("Turn Banner");
+     private final JCheckBox cbLifePopups = new OptionsCheckBox("Floating Life Changes");
+@@ -387,6 +388,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+         // Arena-style board
+         pnlPrefs.add(new SectionLabel("Arena-Style Board"), sectionConstraints + ", gaptop 2%");
+ 
++        pnlPrefs.add(cbArenaLayout, titleConstraints);
++        pnlPrefs.add(new NoteLabel("Gives the battlefields most of the window: stack, combat, log and tool buttons move to a slim rail on the left, player details sit on plates beside each board, one phase bar runs above your board, and the card preview and OK / Cancel share the right column. Takes effect from the next game."), descriptionConstraints);
++
+         pnlPrefs.add(cbPlayMats, titleConstraints);
+         pnlPrefs.add(new NoteLabel("Draws a tinted mat behind each battlefield (blue for you, red for opponents) with a darker band under land rows."), descriptionConstraints);
+ 
+@@ -1176,6 +1180,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+         return cbCardDepthEffects;
+     }
+ 
++    public JCheckBox getCbArenaLayout() { return cbArenaLayout; }
+     public JCheckBox getCbPlayableGlow() { return cbPlayableGlow; }
+     public JCheckBox getCbTurnBanner() { return cbTurnBanner; }
+     public JCheckBox getCbLifePopups() { return cbLifePopups; }
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaDrawer.java b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaDrawer.java
+new file mode 100644
+index 0000000000..d52148f070
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaDrawer.java
+@@ -0,0 +1,285 @@
++package forge.screens.match;
++
++import java.awt.BasicStroke;
++import java.awt.BorderLayout;
++import java.awt.CardLayout;
++import java.awt.Color;
++import java.awt.Cursor;
++import java.awt.FontMetrics;
++import java.awt.Graphics;
++import java.awt.Graphics2D;
++import java.awt.Rectangle;
++import java.awt.RenderingHints;
++import java.awt.event.ComponentAdapter;
++import java.awt.event.ComponentEvent;
++import java.awt.event.ComponentListener;
++import java.awt.event.MouseAdapter;
++import java.awt.event.MouseEvent;
++import java.util.EnumMap;
++import java.util.Map;
++
++import javax.swing.BorderFactory;
++import javax.swing.JComponent;
++import javax.swing.JLayeredPane;
++import javax.swing.JPanel;
++import javax.swing.SwingUtilities;
++
++import forge.Singletons;
++import forge.gui.framework.DragCell;
++import forge.gui.framework.EDocID;
++import forge.toolbox.FSkin;
++import net.miginfocom.swing.MigLayout;
++
++/** Panel that slides out beside the rail and shows the stack, combat, log or card links. */
++@SuppressWarnings("serial")
++class ArenaDrawer extends JPanel {
++    private static final int WIDTH = 330;
++    private static final Integer LAYER = JLayeredPane.PALETTE_LAYER + 1;
++    private static final Color BG = new Color(15, 24, 42, 246);
++
++    private final ArenaFrame frame;
++    private final CardLayout cards = new CardLayout();
++    private final JPanel body = new JPanel(cards);
++    private final Map<EDocID, TabPill> tabs = new EnumMap<>(EDocID.class);
++    private final ComponentListener follower = new ComponentAdapter() {
++        @Override
++        public void componentResized(final ComponentEvent e) {
++            position();
++        }
++
++        @Override
++        public void componentMoved(final ComponentEvent e) {
++            position();
++        }
++    };
++    private EDocID open;
++    private boolean attached;
++
++    ArenaDrawer(final ArenaFrame frame) {
++        this.frame = frame;
++        setOpaque(false);
++        setLayout(new BorderLayout());
++        setBorder(BorderFactory.createEmptyBorder(8, 8, 10, 10));
++        // swallow clicks on the drawer's own background so they don't reach the board underneath
++        addMouseListener(new MouseAdapter() { });
++
++        final JPanel header = new JPanel(new MigLayout("insets 0 2 6 0, gap 4", "", "[center]"));
++        header.setOpaque(false);
++        final String[] titles = {"Stack", "Combat", "Log", "Card Links"};
++        for (int i = 0; i < ArenaFrame.DRAWER_DOCS.length; i++) {
++            final EDocID id = ArenaFrame.DRAWER_DOCS[i];
++            final DragCell cell = frame.getPrivateCell(id);
++            if (cell == null) {
++                continue;
++            }
++            final TabPill pill = new TabPill(titles[i], () -> show(id));
++            tabs.put(id, pill);
++            header.add(pill, "h 24!");
++            body.add(cell, id.name());
++        }
++        final CloseButton close = new CloseButton(this::hideDrawer);
++        header.add(close, "pushx, alignx right, w 24!, h 24!");
++
++        body.setOpaque(false);
++        add(header, BorderLayout.NORTH);
++        add(body, BorderLayout.CENTER);
++        setVisible(false);
++    }
++
++    void attach() {
++        if (attached) {
++            return;
++        }
++        final JLayeredPane lpn = Singletons.getView().getLpnDocument();
++        lpn.add(this, LAYER);
++        lpn.addComponentListener(follower);
++        final ArenaRail rail = frame.getRail();
++        if (rail != null) {
++            rail.addComponentListener(follower);
++        }
++        attached = true;
++        position();
++    }
++
++    void detach() {
++        if (!attached) {
++            return;
++        }
++        hideDrawer();
++        final JLayeredPane lpn = Singletons.getView().getLpnDocument();
++        lpn.removeComponentListener(follower);
++        final ArenaRail rail = frame.getRail();
++        if (rail != null) {
++            rail.removeComponentListener(follower);
++        }
++        lpn.remove(this);
++        lpn.repaint();
++        attached = false;
++    }
++
++    void toggle(final EDocID id) {
++        if (isVisible() && open == id) {
++            hideDrawer();
++        } else {
++            show(id);
++        }
++    }
++
++    private void show(final EDocID id) {
++        if (!tabs.containsKey(id)) {
++            return;
++        }
++        open = id;
++        cards.show(body, id.name());
++        for (final Map.Entry<EDocID, TabPill> e : tabs.entrySet()) {
++            e.getValue().setSelected(e.getKey() == id);
++        }
++        position();
++        setVisible(true);
++        revalidate();
++        repaint();
++        frame.drawerChanged(id);
++    }
++
++    void hideDrawer() {
++        if (!isVisible()) {
++            return;
++        }
++        setVisible(false);
++        open = null;
++        final java.awt.Container parent = getParent();
++        if (parent != null) {
++            parent.repaint(getX(), getY(), getWidth(), getHeight());
++        }
++        frame.drawerChanged(null);
++    }
++
++    private void position() {
++        final ArenaRail rail = frame.getRail();
++        if (!attached || rail == null) {
++            return;
++        }
++        if (!rail.isShowing()) {
++            hideDrawer();
++            return;
++        }
++        final JLayeredPane lpn = Singletons.getView().getLpnDocument();
++        final Rectangle r = SwingUtilities.convertRectangle(rail.getParent(), rail.getBounds(), lpn);
++        setBounds(r.x + r.width, r.y, WIDTH, r.height);
++        revalidate();
++    }
++
++    @Override
++    protected void paintComponent(final Graphics g) {
++        final Graphics2D g2 = (Graphics2D) g.create();
++        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++        final int w = getWidth();
++        final int h = getHeight();
++        g2.setColor(new Color(0, 0, 0, 90));
++        g2.fillRoundRect(0, 0, w, h, 16, 16);
++        g2.setColor(BG);
++        g2.fillRoundRect(0, 0, w - 4, h - 4, 14, 14);
++        g2.fillRect(0, 0, 14, h - 4);
++        g2.setColor(new Color(217, 168, 67, 120));
++        g2.setStroke(new BasicStroke(1f));
++        g2.drawRoundRect(0, 0, w - 5, h - 5, 14, 14);
++        g2.dispose();
++    }
++
++    /** Header tab in the drawer. */
++    private static final class TabPill extends JComponent {
++        private final String text;
++        private boolean selected;
++        private boolean hover;
++
++        TabPill(final String text, final Runnable action) {
++            this.text = text;
++            setFont(FSkin.getBoldFont(12).getBaseFont());
++            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
++            addMouseListener(new MouseAdapter() {
++                @Override
++                public void mouseClicked(final MouseEvent e) {
++                    action.run();
++                }
++
++                @Override
++                public void mouseEntered(final MouseEvent e) {
++                    hover = true;
++                    repaint();
++                }
++
++                @Override
++                public void mouseExited(final MouseEvent e) {
++                    hover = false;
++                    repaint();
++                }
++            });
++        }
++
++        void setSelected(final boolean b) {
++            selected = b;
++            repaint();
++        }
++
++        @Override
++        public java.awt.Dimension getPreferredSize() {
++            final FontMetrics fm = getFontMetrics(getFont());
++            return new java.awt.Dimension(fm.stringWidth(text) + 20, 24);
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final Graphics2D g2 = (Graphics2D) g.create();
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
++            final int w = getWidth();
++            final int h = getHeight();
++            if (selected) {
++                g2.setColor(ArenaRail.GOLD);
++                g2.fillRoundRect(0, 0, w, h, h, h);
++            } else if (hover) {
++                g2.setColor(new Color(255, 255, 255, 26));
++                g2.fillRoundRect(0, 0, w, h, h, h);
++            }
++            g2.setFont(getFont());
++            final FontMetrics fm = g2.getFontMetrics();
++            g2.setColor(selected ? new Color(26, 18, 6) : ArenaRail.TEXT);
++            g2.drawString(text, (w - fm.stringWidth(text)) / 2, (h - fm.getHeight()) / 2 + fm.getAscent());
++            g2.dispose();
++        }
++    }
++
++    private static final class CloseButton extends JComponent {
++        private boolean hover;
++
++        CloseButton(final Runnable action) {
++            setToolTipText("Close");
++            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
++            addMouseListener(new MouseAdapter() {
++                @Override
++                public void mouseClicked(final MouseEvent e) {
++                    action.run();
++                }
++
++                @Override
++                public void mouseEntered(final MouseEvent e) {
++                    hover = true;
++                    repaint();
++                }
++
++                @Override
++                public void mouseExited(final MouseEvent e) {
++                    hover = false;
++                    repaint();
++                }
++            });
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final int s = Math.min(getWidth(), getHeight());
++            ArenaRail.drawGlyph((Graphics2D) g, ArenaRail.Glyph.CLOSE, (getWidth() - s) / 2 + 4, (getHeight() - s) / 2 + 4,
++                    s - 8, hover ? ArenaRail.GOLD : ArenaRail.MUTED);
++        }
++    }
++}
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
+new file mode 100644
+index 0000000000..dc39a03847
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
+@@ -0,0 +1,212 @@
++package forge.screens.match;
++
++import java.awt.BorderLayout;
++import java.awt.Component;
++import java.awt.event.MouseListener;
++import java.awt.event.MouseMotionListener;
++import java.io.File;
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.util.EnumMap;
++import java.util.Map;
++
++import javax.swing.JPanel;
++
++import forge.game.player.PlayerView;
++import forge.gui.framework.DragCell;
++import forge.gui.framework.EDocID;
++import forge.gui.framework.FScreen;
++import forge.gui.framework.ICDoc;
++import forge.gui.framework.IVDoc;
++import forge.gui.framework.VEmptyDoc;
++import forge.localinstance.properties.FileLocation;
++import forge.localinstance.properties.ForgeConstants;
++import forge.localinstance.properties.ForgePreferences.FPref;
++import forge.model.FModel;
++import forge.toolbox.FPanel;
++import forge.view.FView;
++
++/**
++ * Board-first match screen: the battlefields take most of the window, the stack, combat,
++ * log and tool buttons move to a slim rail with a slide-out drawer, and player details sit
++ * on plates beside each board. Built on Forge's dock framework: the layout file only holds
++ * the fields, hand, card preview and prompt; the other docs live in private cells here.
++ */
++public final class ArenaFrame {
++    public static final FileLocation LAYOUT_FILE = new FileLocation(
++            ForgeConstants.RES_DIR + "defaults" + ForgeConstants.PATH_SEPARATOR,
++            ForgeConstants.USER_PREFS_DIR, "match_arena.xml");
++
++    // Fractions of the dock area left of the rail.
++    private static final String DEFAULT_LAYOUT = """
++            <?xml version="1.0"?>
++            <layout serial="">
++            \t<cell x="0.0" y="0.0" w="0.785" h="0.43" sel="FIELD_1">
++            \t\t<doc>FIELD_1</doc>
++            \t</cell>
++            \t<cell x="0.0" y="0.43" w="0.785" h="0.37" sel="FIELD_0">
++            \t\t<doc>FIELD_0</doc>
++            \t</cell>
++            \t<cell x="0.0" y="0.8" w="0.785" h="0.2" sel="HAND_0">
++            \t\t<doc>HAND_0</doc>
++            \t</cell>
++            \t<cell x="0.785" y="0.0" w="0.215" h="0.47" sel="CARD_PICTURE">
++            \t\t<doc>CARD_PICTURE</doc>
++            \t</cell>
++            \t<cell x="0.785" y="0.47" w="0.215" h="0.22" sel="CARD_DETAIL">
++            \t\t<doc>CARD_DETAIL</doc>
++            \t</cell>
++            \t<cell x="0.785" y="0.69" w="0.215" h="0.31" sel="REPORT_MESSAGE">
++            \t\t<doc>REPORT_MESSAGE</doc>
++            \t</cell>
++            </layout>
++            """;
++
++    static final EDocID[] DRAWER_DOCS = {
++            EDocID.REPORT_STACK, EDocID.REPORT_COMBAT, EDocID.REPORT_LOG, EDocID.REPORT_DEPENDENCIES };
++
++    /** True when the board-first layout is switched on and its default layout file is available. */
++    public static boolean isRequested() {
++        return FModel.getPreferences().getPrefBoolean(FPref.UI_ARENA_LAYOUT) && ensureDefaultLayout();
++    }
++
++    private static boolean ensureDefaultLayout() {
++        final File file = new File(LAYOUT_FILE.defaultLoc);
++        if (file.exists()) {
++            return true;
++        }
++        try {
++            Files.writeString(file.toPath(), DEFAULT_LAYOUT, StandardCharsets.UTF_8);
++            return true;
++        } catch (final IOException e) {
++            System.err.println("Board-first layout unavailable, could not write " + file + ": " + e.getMessage());
++            return false;
++        }
++    }
++
++    /** Called by SLayoutIO after it has built the cells for a screen. */
++    public static void afterLayoutLoaded(final FScreen screen) {
++        if (screen != null && screen.getController() instanceof CMatchUI matchUI && matchUI.isArenaMode()) {
++            matchUI.getArenaFrame().install();
++        }
++    }
++
++    private final CMatchUI matchUI;
++    private final Map<EDocID, DragCell> privateCells = new EnumMap<>(EDocID.class);
++    private final ArenaPhaseBar phaseBar;
++    private ArenaRail rail;
++    private ArenaDrawer drawer;
++
++    ArenaFrame(final CMatchUI matchUI) {
++        this.matchUI = matchUI;
++        this.phaseBar = new ArenaPhaseBar(matchUI);
++    }
++
++    CMatchUI getMatchUI() {
++        return matchUI;
++    }
++
++    public ArenaPhaseBar getPhaseBar() {
++        return phaseBar;
++    }
++
++    DragCell getPrivateCell(final EDocID id) {
++        return privateCells.get(id);
++    }
++
++    ArenaRail getRail() {
++        return rail;
++    }
++
++    private void install() {
++        if (rail == null) {
++            for (final EDocID id : DRAWER_DOCS) {
++                adopt(id);
++            }
++            adopt(EDocID.BUTTON_DOCK);
++            drawer = new ArenaDrawer(this);
++            rail = new ArenaRail(this);
++        }
++        final FView view = FView.SINGLETON_INSTANCE;
++        view.getPnlInsets().add(rail, BorderLayout.WEST);
++        for (final DragCell cell : view.getDragCells()) {
++            styleCell(cell);
++        }
++        drawer.attach();
++        stackChanged();
++    }
++
++    void uninstall() {
++        if (drawer != null) {
++            drawer.detach();
++        }
++        if (rail != null && rail.getParent() != null) {
++            final java.awt.Container parent = rail.getParent();
++            parent.remove(rail);
++            parent.revalidate();
++        }
++    }
++
++    /** Moves a doc out of the dock layout into a cell that only this frame shows. */
++    private void adopt(final EDocID id) {
++        final IVDoc<? extends ICDoc> doc = id.getDoc();
++        if (doc == null || doc instanceof VEmptyDoc) {
++            return;
++        }
++        final DragCell previous = doc.getParentCell();
++        if (previous != null) {
++            previous.removeDoc(doc);
++        }
++        final DragCell cell = new DragCell();
++        removeListeners(cell.getBorderRight());
++        removeListeners(cell.getBorderBottom());
++        cell.addDoc(doc);
++        cell.doCellLayout(false);
++        styleBody(cell);
++        privateCells.put(id, cell);
++    }
++
++    private static void removeListeners(final JPanel panel) {
++        for (final MouseListener l : panel.getMouseListeners()) {
++            panel.removeMouseListener(l);
++        }
++        for (final MouseMotionListener l : panel.getMouseMotionListeners()) {
++            panel.removeMouseMotionListener(l);
++        }
++    }
++
++    private static void styleCell(final DragCell cell) {
++        cell.doCellLayout(false);
++        styleBody(cell);
++    }
++
++    private static void styleBody(final DragCell cell) {
++        final Component body = cell.getBody();
++        if (body instanceof FPanel panel) {
++            panel.setBorderToggle(false);
++        }
++    }
++
++    void toggleDrawer(final EDocID id) {
++        if (drawer != null) {
++            drawer.toggle(id);
++        }
++    }
++
++    void drawerChanged(final EDocID openDoc) {
++        if (rail != null) {
++            rail.setOpenDoc(openDoc);
++        }
++    }
++
++    void stackChanged() {
++        if (rail != null && matchUI.getGameView() != null) {
++            rail.setStackCount(matchUI.getGameView().getStack().size());
++        }
++    }
++
++    void turnChanged(final PlayerView player) {
++        phaseBar.turnChanged(player);
++    }
++}
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaPhaseBar.java b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaPhaseBar.java
+new file mode 100644
+index 0000000000..125062c47e
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaPhaseBar.java
+@@ -0,0 +1,163 @@
++package forge.screens.match;
++
++import java.awt.Color;
++import java.awt.Cursor;
++import java.awt.Graphics;
++import java.awt.Graphics2D;
++import java.awt.RenderingHints;
++import java.awt.event.MouseAdapter;
++import java.awt.event.MouseEvent;
++import java.util.ArrayList;
++import java.util.List;
++
++import javax.swing.JLabel;
++import javax.swing.JPanel;
++
++import forge.game.GameView;
++import forge.game.player.PlayerView;
++import forge.screens.match.views.VField;
++import forge.toolbox.FSkin;
++import forge.toolbox.special.PhaseIndicator;
++import net.miginfocom.swing.MigLayout;
++
++/**
++ * One horizontal phase bar along the top of your battlefield. It shows the phase stops of the
++ * player whose turn it is; the button on the right switches to another player's stops.
++ */
++@SuppressWarnings("serial")
++public class ArenaPhaseBar extends JPanel {
++    public static final int HEIGHT = 30;
++    private static final Color MINE = new Color(120, 175, 240);
++    private static final Color THEIRS = new Color(240, 125, 115);
++
++    private final CMatchUI matchUI;
++    private final JLabel turnLabel = new JLabel();
++    private final JPanel holder = new JPanel(new MigLayout("insets 0, gap 0", "", "[center]"));
++    private final JLabel ownerButton = new JLabel();
++    private PlayerView shown;
++
++    ArenaPhaseBar(final CMatchUI matchUI) {
++        this.matchUI = matchUI;
++        setOpaque(false);
++        setLayout(new MigLayout("insets 4 12 4 12, gap 12", "[][grow, center][]", "[center]"));
++        holder.setOpaque(false);
++
++        turnLabel.setFont(FSkin.getBoldFont(12).getBaseFont());
++        turnLabel.setForeground(MINE);
++        ownerButton.setFont(FSkin.getFont(11).getBaseFont());
++        ownerButton.setForeground(ArenaRail.MUTED);
++        ownerButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
++        ownerButton.setToolTipText("<html>Phase stops are kept separately for each player's turn.<br>"
++                + "Click to view and change another player's stops.</html>");
++        ownerButton.addMouseListener(new MouseAdapter() {
++            @Override
++            public void mouseClicked(final MouseEvent e) {
++                showNextPlayer();
++            }
++
++            @Override
++            public void mouseEntered(final MouseEvent e) {
++                ownerButton.setForeground(ArenaRail.GOLD);
++            }
++
++            @Override
++            public void mouseExited(final MouseEvent e) {
++                ownerButton.setForeground(ArenaRail.MUTED);
++            }
++        });
++
++        add(turnLabel);
++        add(holder, "alignx center");
++        add(ownerButton, "alignx right");
++    }
++
++    @Override
++    public void addNotify() {
++        super.addNotify();
++        if (shown == null) {
++            final GameView gv = matchUI.getGameView();
++            if (gv != null) {
++                final PlayerView turn = gv.getPlayerTurn();
++                if (turn != null) {
++                    turnChanged(turn);
++                } else if (!gv.getPlayers().isEmpty()) {
++                    showFor(firstLocalOrAny(gv));
++                }
++            }
++        }
++    }
++
++    void turnChanged(final PlayerView player) {
++        if (player == null) {
++            return;
++        }
++        final GameView gv = matchUI.getGameView();
++        final boolean mine = matchUI.isLocalPlayer(player);
++        final String owner = mine && matchUI.getLocalPlayerCount() == 1 ? "Your turn" : player.getName();
++        turnLabel.setText((gv == null ? "" : "Turn " + gv.getTurn() + "  ·  ") + owner);
++        turnLabel.setForeground(mine ? MINE : THEIRS);
++        showFor(player);
++    }
++
++    private void showFor(final PlayerView player) {
++        final VField field = fieldFor(player);
++        if (field == null) {
++            return;
++        }
++        final PhaseIndicator indicator = field.getPhaseIndicator();
++        indicator.setHorizontal();
++        if (indicator.getParent() != holder) {
++            holder.removeAll();
++            holder.add(indicator);
++        }
++        shown = player;
++        final boolean mine = matchUI.isLocalPlayer(player) && matchUI.getLocalPlayerCount() == 1;
++        ownerButton.setText("Stops: " + (mine ? "your turn" : player.getName() + "'s turn") + "  ·  switch");
++        revalidate();
++        repaint();
++    }
++
++    private void showNextPlayer() {
++        final GameView gv = matchUI.getGameView();
++        if (gv == null) {
++            return;
++        }
++        final List<PlayerView> players = new ArrayList<>();
++        for (final PlayerView p : gv.getPlayers()) {
++            players.add(p);
++        }
++        if (players.isEmpty()) {
++            return;
++        }
++        final int idx = shown == null ? -1 : players.indexOf(shown);
++        showFor(players.get((idx + 1) % players.size()));
++    }
++
++    private PlayerView firstLocalOrAny(final GameView gv) {
++        for (final PlayerView p : gv.getPlayers()) {
++            if (matchUI.isLocalPlayer(p)) {
++                return p;
++            }
++        }
++        return gv.getPlayers().iterator().next();
++    }
++
++    private VField fieldFor(final PlayerView player) {
++        try {
++            return matchUI.getFieldViewFor(player);
++        } catch (final IndexOutOfBoundsException e) {
++            return null;
++        }
++    }
++
++    @Override
++    protected void paintComponent(final Graphics g) {
++        final Graphics2D g2 = (Graphics2D) g.create();
++        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++        g2.setColor(new Color(10, 17, 32, 200));
++        g2.fillRoundRect(2, 2, getWidth() - 4, getHeight() - 4, 12, 12);
++        g2.setColor(new Color(43, 59, 90));
++        g2.drawRoundRect(2, 2, getWidth() - 5, getHeight() - 5, 12, 12);
++        g2.dispose();
++    }
++}
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaRail.java b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaRail.java
+new file mode 100644
+index 0000000000..3276cb81a8
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaRail.java
+@@ -0,0 +1,218 @@
++package forge.screens.match;
++
++import java.awt.BasicStroke;
++import java.awt.Color;
++import java.awt.Cursor;
++import java.awt.Dimension;
++import java.awt.FontMetrics;
++import java.awt.GradientPaint;
++import java.awt.Graphics;
++import java.awt.Graphics2D;
++import java.awt.RenderingHints;
++import java.awt.event.MouseAdapter;
++import java.awt.event.MouseEvent;
++import java.awt.geom.Path2D;
++import java.awt.geom.RoundRectangle2D;
++
++import javax.swing.JComponent;
++import javax.swing.JPanel;
++import javax.swing.SwingUtilities;
++
++import forge.gui.framework.DragCell;
++import forge.gui.framework.EDocID;
++import forge.toolbox.FSkin;
++import net.miginfocom.swing.MigLayout;
++
++/** Slim column on the left of the match screen: drawer toggles on top, the tool dock below. */
++@SuppressWarnings("serial")
++class ArenaRail extends JPanel {
++    static final int WIDTH = 52;
++
++    static final Color NAVY_TOP = new Color(12, 21, 40);
++    static final Color NAVY_BOTTOM = new Color(16, 28, 51);
++    static final Color LINE = new Color(43, 59, 90);
++    static final Color GOLD = new Color(217, 168, 67);
++    static final Color TEXT = new Color(233, 237, 245);
++    static final Color MUTED = new Color(142, 155, 182);
++
++    private final RailButton stackButton;
++    private final RailButton combatButton;
++    private final RailButton logButton;
++
++    ArenaRail(final ArenaFrame frame) {
++        setOpaque(true);
++        setLayout(new MigLayout("insets 10 0 4 0, gap 0, flowy, alignx center"));
++        setPreferredSize(new Dimension(WIDTH, 100));
++        setMinimumSize(new Dimension(WIDTH, 100));
++
++        stackButton = new RailButton(Glyph.STACK, "Stack", () -> frame.toggleDrawer(EDocID.REPORT_STACK));
++        combatButton = new RailButton(Glyph.COMBAT, "Combat", () -> frame.toggleDrawer(EDocID.REPORT_COMBAT));
++        logButton = new RailButton(Glyph.LOG, "Game log", () -> frame.toggleDrawer(EDocID.REPORT_LOG));
++
++        final String buttonConstraints = "w 36!, h 36!, alignx center, gapbottom 8";
++        add(stackButton, buttonConstraints);
++        add(combatButton, buttonConstraints);
++        add(logButton, buttonConstraints);
++        add(new Divider(), "w 28!, h 1!, alignx center, gaptop 2, gapbottom 2");
++
++        final DragCell dock = frame.getPrivateCell(EDocID.BUTTON_DOCK);
++        if (dock != null) {
++            dock.setOpaque(false);
++            dock.getBody().setOpaque(false);
++            add(dock, "w " + WIDTH + "!, growy, pushy");
++        }
++    }
++
++    void setStackCount(final int count) {
++        stackButton.setBadge(count);
++    }
++
++    void setOpenDoc(final EDocID openDoc) {
++        stackButton.setSelected(openDoc == EDocID.REPORT_STACK);
++        combatButton.setSelected(openDoc == EDocID.REPORT_COMBAT);
++        logButton.setSelected(openDoc == EDocID.REPORT_LOG);
++    }
++
++    @Override
++    protected void paintComponent(final Graphics g) {
++        final Graphics2D g2 = (Graphics2D) g.create();
++        g2.setPaint(new GradientPaint(0, 0, NAVY_TOP, getWidth(), 0, NAVY_BOTTOM));
++        g2.fillRect(0, 0, getWidth(), getHeight());
++        g2.setColor(LINE);
++        g2.fillRect(getWidth() - 1, 0, 1, getHeight());
++        g2.dispose();
++    }
++
++    private static final class Divider extends JComponent {
++        @Override
++        protected void paintComponent(final Graphics g) {
++            g.setColor(LINE);
++            g.fillRect(0, 0, getWidth(), 1);
++        }
++    }
++
++    enum Glyph { STACK, COMBAT, LOG, CLOSE }
++
++    /** Draws a 24x24 line icon scaled into the given square. */
++    static void drawGlyph(final Graphics2D g, final Glyph glyph, final int x, final int y, final int size, final Color color) {
++        final Graphics2D g2 = (Graphics2D) g.create();
++        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++        g2.translate(x, y);
++        g2.scale(size / 24.0, size / 24.0);
++        g2.setColor(color);
++        g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
++        final Path2D p = new Path2D.Double();
++        switch (glyph) {
++            case STACK -> {
++                p.moveTo(12, 3); p.lineTo(2, 8); p.lineTo(12, 13); p.lineTo(22, 8); p.closePath();
++                p.moveTo(2, 13); p.lineTo(12, 18); p.lineTo(22, 13);
++                p.moveTo(2, 17.5); p.lineTo(12, 22.5); p.lineTo(22, 17.5);
++            }
++            case COMBAT -> {
++                p.moveTo(4, 4); p.lineTo(20, 20);
++                p.moveTo(20, 4); p.lineTo(4, 20);
++                p.moveTo(3, 15); p.lineTo(9, 21);
++                p.moveTo(21, 15); p.lineTo(15, 21);
++            }
++            case LOG -> {
++                p.append(new RoundRectangle2D.Double(5, 3, 14, 18, 4, 4), false);
++                p.moveTo(8.5, 8); p.lineTo(15.5, 8);
++                p.moveTo(8.5, 12); p.lineTo(15.5, 12);
++                p.moveTo(8.5, 16); p.lineTo(13, 16);
++            }
++            case CLOSE -> {
++                p.moveTo(6, 6); p.lineTo(18, 18);
++                p.moveTo(18, 6); p.lineTo(6, 18);
++            }
++        }
++        g2.draw(p);
++        g2.dispose();
++    }
++
++    /** Square icon button with hover, selected and badge states. */
++    static final class RailButton extends JComponent {
++        private final Glyph glyph;
++        private final Runnable action;
++        private boolean hover;
++        private boolean selected;
++        private int badge;
++
++        RailButton(final Glyph glyph, final String tooltip, final Runnable action) {
++            this.glyph = glyph;
++            this.action = action;
++            setToolTipText(tooltip);
++            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
++            addMouseListener(new MouseAdapter() {
++                @Override
++                public void mouseEntered(final MouseEvent e) {
++                    hover = true;
++                    repaint();
++                }
++
++                @Override
++                public void mouseExited(final MouseEvent e) {
++                    hover = false;
++                    repaint();
++                }
++
++                @Override
++                public void mouseClicked(final MouseEvent e) {
++                    if (SwingUtilities.isLeftMouseButton(e)) {
++                        RailButton.this.action.run();
++                    }
++                }
++            });
++        }
++
++        void setSelected(final boolean b) {
++            if (selected != b) {
++                selected = b;
++                repaint();
++            }
++        }
++
++        void setBadge(final int n) {
++            if (badge != n) {
++                badge = n;
++                repaint();
++            }
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final Graphics2D g2 = (Graphics2D) g.create();
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            final int w = getWidth();
++            final int h = getHeight();
++            final int inset = 2;
++            final RoundRectangle2D box = new RoundRectangle2D.Double(inset, inset, w - 2 * inset - 1, h - 2 * inset - 1, 10, 10);
++            if (selected) {
++                g2.setColor(new Color(217, 168, 67, 34));
++                g2.fill(box);
++                g2.setColor(new Color(217, 168, 67, 150));
++                g2.draw(box);
++            } else if (hover) {
++                g2.setColor(new Color(255, 255, 255, 22));
++                g2.fill(box);
++            } else {
++                g2.setColor(new Color(255, 255, 255, 8));
++                g2.fill(box);
++            }
++            final int icon = Math.round(Math.min(w, h) * 0.55f);
++            drawGlyph(g2, glyph, (w - icon) / 2, (h - icon) / 2, icon, selected || hover ? GOLD : MUTED);
++
++            if (badge > 0) {
++                final String text = String.valueOf(badge);
++                g2.setFont(FSkin.getBoldFont(10).getBaseFont());
++                final FontMetrics fm = g2.getFontMetrics();
++                final int bw = Math.max(15, fm.stringWidth(text) + 8);
++                final int bx = w - bw;
++                g2.setColor(GOLD);
++                g2.fillRoundRect(bx, 0, bw, 15, 15, 15);
++                g2.setColor(new Color(26, 18, 6));
++                g2.drawString(text, bx + (bw - fm.stringWidth(text)) / 2, 11);
++            }
++            g2.dispose();
++        }
++    }
++}
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/BoardOverlay.java b/forge-gui-desktop/src/main/java/forge/screens/match/BoardOverlay.java
+index 9203430b80..973eebf381 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/BoardOverlay.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/BoardOverlay.java
+@@ -433,7 +433,10 @@ public class BoardOverlay extends JComponent {
+         final int dx = Math.round(cw * STACK_OFFSET_X);
+         final int dy = Math.round(ch * STACK_OFFSET_Y);
+         final int ax = board.x + board.width - cw - STACK_MARGIN;
+-        int ay = seamY(board) - ch / 2 + (shown - 1) * dy / 2;
++        // board-first layout: keep the cascade above the phase bar that runs along the seam
++        int ay = matchUI.isArenaMode()
++                ? seamY(board) - ch - STACK_LABEL_HEIGHT - 16
++                : seamY(board) - ch / 2 + (shown - 1) * dy / 2;
+         ay = Math.max(board.y + (shown - 1) * dy + 6, Math.min(ay, board.y + board.height - ch - STACK_LABEL_HEIGHT - 6));
+         Rectangle area = null;
+         for (int k = 0; k < shown; k++) {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
+index 04ef3d7d85..bf7b4b3b8f 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
+@@ -176,6 +176,8 @@ public final class CMatchUI
+     private final CStack cStack = new CStack(this);
+     private int nextNotifiableStackIndex = 0;
+     private final PlayFeed playFeed = new PlayFeed(this);
++    private final boolean arenaMode = ArenaFrame.isRequested();
++    private final ArenaFrame arenaFrame = new ArenaFrame(this);
+     private final BoardOverlay boardOverlay = new BoardOverlay(this);
+     private String lastPromptMessage = "";
+ 
+@@ -334,6 +336,15 @@ public final class CMatchUI
+     public boolean isInputButtonEnabled() {
+         return view.getBtnOK().isEnabled() || view.getBtnCancel().isEnabled();
+     }
++    /** Board-first match layout, fixed for the lifetime of this match screen. */
++    public boolean isArenaMode() {
++        return arenaMode;
++    }
++
++    public ArenaFrame getArenaFrame() {
++        return arenaFrame;
++    }
++
+     public CStack getCStack() {
+         return cStack;
+     }
+@@ -943,7 +954,12 @@ public final class CMatchUI
+         SDisplayUtil.showTab(nextField);
+         cPrompt.updateText();
+         repaintCardOverlays();
+-        FThreads.invokeInEdtNowOrLater(() -> boardOverlay.turnChanged(player));
++        FThreads.invokeInEdtNowOrLater(() -> {
++            boardOverlay.turnChanged(player);
++            if (arenaMode) {
++                arenaFrame.turnChanged(player);
++            }
++        });
+     }
+ 
+     @Override
+@@ -990,6 +1006,9 @@ public final class CMatchUI
+         FThreads.invokeInEdtNowOrLater(() -> {
+             getCStack().update();
+             boardOverlay.stackChanged();
++            if (arenaMode) {
++                arenaFrame.stackChanged();
++            }
+         });
+     }
+ 
+@@ -1308,6 +1327,9 @@ public final class CMatchUI
+         FThreads.invokeInEdtNowOrLater(() -> {
+             playFeed.detach();
+             boardOverlay.detach();
++            if (arenaMode) {
++                arenaFrame.uninstall();
++            }
+             Singletons.getView().getNavigationBar().closeTab(screen);
+             LinkHandler.clearWeakReferencesNow();
+         });
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/PlayFeed.java b/forge-gui-desktop/src/main/java/forge/screens/match/PlayFeed.java
+index eed05b3989..1837c40a20 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/PlayFeed.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/PlayFeed.java
+@@ -277,7 +277,8 @@ public class PlayFeed {
+             return;
+         }
+         // left edge: the right side of the board holds the stack cascade
+-        final int x = Math.max(MARGIN, anchor.x + MARGIN);
++        final int plateStrip = matchUI.isArenaMode() ? forge.screens.match.views.ArenaFieldPanel.RESERVED_LEFT : 0;
++        final int x = Math.max(MARGIN, anchor.x + plateStrip + MARGIN);
+         // start below the opponent's card-back fan along the top edge
+         final int top = Math.max(0, anchor.y + TOP_OFFSET);
+ 
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
+index 7bbdf62f2c..b446c6502d 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
+@@ -178,13 +178,13 @@ public class VMatchUI implements IVTopLevelUI {
+             VField vField = lstFields.get(i);
+             // Check if field is in a visible cell (not a stale reference from old layout)
+             DragCell parentCell = vField.getParentCell();
+-            if (parentCell != null && parentCell.isShowing()) {
++            if (isPlaced(parentCell)) {
+                 continue;
+             }
+ 
+             if (i < 2) {
+-                // Base fields: use REPORT_LOG's cell as fallback
+-                DragCell fallbackCell = EDocID.REPORT_LOG.getDoc().getParentCell();
++                // Base fields: use REPORT_LOG's cell as fallback (in the board-first layout that doc is not docked)
++                DragCell fallbackCell = control.isArenaMode() ? arenaFallbackCell() : EDocID.REPORT_LOG.getDoc().getParentCell();
+                 if (fallbackCell != null) {
+                     fallbackCell.addDoc(vField);
+                 }
+@@ -210,14 +210,14 @@ public class VMatchUI implements IVTopLevelUI {
+                 if (cellWithHandsFallback == null) {
+                     cellWithHandsFallback = c;
+                 }
+-                if (c.isShowing()) {
++                if (isPlaced(c)) {
+                     cellWithHands = c;
+                     break;
+                 }
+             }
+         }
+         if (cellWithHands == null) {
+-            cellWithHands = EDocID.REPORT_LOG.getDoc().getParentCell();
++            cellWithHands = control.isArenaMode() ? arenaFallbackCell() : EDocID.REPORT_LOG.getDoc().getParentCell();
+         }
+         // Last resort: use any hand cell even if not yet showing (e.g. during
+         // initial game load before Swing has realized the components).
+@@ -243,7 +243,7 @@ public class VMatchUI implements IVTopLevelUI {
+                 }
+             } else {
+                 // Hand present, add it if necessary (check isShowing for stale references)
+-                if (parentCell == null || !parentCell.isShowing()) {
++                if (!isPlaced(parentCell)) {
+                     final EDocID fieldDoc = EDocID.Fields[iHandId];
+                     DragCell fieldCell = fieldDoc.getDoc().getParentCell();
+                     if (fieldCell != null && (fieldCell.isShowing() || cellWithHands == null)) {
+@@ -268,6 +268,25 @@ public class VMatchUI implements IVTopLevelUI {
+         });
+     }
+ 
++    /** A cell the doc can stay in: on screen, or (board-first layout) part of the loaded layout. */
++    private boolean isPlaced(final DragCell cell) {
++        if (cell == null) {
++            return false;
++        }
++        return cell.isShowing() || (control.isArenaMode() && FView.SINGLETON_INSTANCE.getDragCells().contains(cell));
++    }
++
++    private DragCell arenaFallbackCell() {
++        for (final EDocID id : new EDocID[] {EDocID.HAND_0, EDocID.FIELD_0, EDocID.FIELD_1}) {
++            final DragCell cell = id.getDoc() == null ? null : id.getDoc().getParentCell();
++            if (cell != null && FView.SINGLETON_INSTANCE.getDragCells().contains(cell)) {
++                return cell;
++            }
++        }
++        final List<DragCell> cells = FView.SINGLETON_INSTANCE.getDragCells();
++        return cells.isEmpty() ? null : cells.get(0);
++    }
++
+     /**
+      * Assigns extra player fields (index 2+) to cells based on current
+      * layout and panel style preferences. Split mode uses percentage-based
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaFieldPanel.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaFieldPanel.java
+new file mode 100644
+index 0000000000..e891734bae
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaFieldPanel.java
+@@ -0,0 +1,233 @@
++package forge.screens.match.views;
++
++import java.awt.BasicStroke;
++import java.awt.Color;
++import java.awt.Cursor;
++import java.awt.Dimension;
++import java.awt.FontMetrics;
++import java.awt.Graphics;
++import java.awt.Graphics2D;
++import java.awt.RenderingHints;
++import java.awt.Shape;
++import java.awt.event.MouseAdapter;
++import java.awt.event.MouseEvent;
++import java.awt.geom.Ellipse2D;
++
++import javax.swing.JLabel;
++import javax.swing.JPanel;
++import javax.swing.SwingConstants;
++
++import forge.game.card.CounterEnumType;
++import forge.game.player.PlayerView;
++import forge.screens.match.ArenaPhaseBar;
++import forge.toolbox.FSkin;
++import forge.toolbox.special.PlayerDetailsPanel;
++import net.miginfocom.swing.MigLayout;
++
++/**
++ * Board-first battlefield: the play area fills the cell, a player plate sits in a reserved strip
++ * on its left edge, and your battlefield also carries the phase bar along its top.
++ */
++@SuppressWarnings("serial")
++public class ArenaFieldPanel extends JPanel {
++    static final int PLATE_WIDTH = 104;
++    private static final int PLATE_MARGIN = 8;
++    /** Width of the strip on the left of each board kept for the player plate. */
++    public static final int RESERVED_LEFT = PLATE_WIDTH + PLATE_MARGIN + 4;
++    private static final float MAX_CARD_WIDTH_SHARE = 0.5f;
++
++    static final Color GOLD = new Color(217, 168, 67);
++    static final Color RING_YOU = new Color(45, 105, 175);
++    static final Color RING_OPPONENT = new Color(170, 55, 50);
++    static final Color TEXT = new Color(233, 237, 245);
++    static final Color MUTED = new Color(142, 155, 182);
++
++    private final VField field;
++    private final Plate plate;
++    private final ArenaPhaseBar phaseBar;
++
++    ArenaFieldPanel(final VField field, final Plate plate, final ArenaPhaseBar phaseBar) {
++        super(null);
++        this.field = field;
++        this.plate = plate;
++        this.phaseBar = phaseBar;
++        setOpaque(false);
++        // first added paints on top
++        add(plate);
++        if (phaseBar != null) {
++            add(phaseBar);
++        }
++        add(field.getScroller());
++    }
++
++    /** Children overlap, so Swing must not assume it can paint them independently. */
++    @Override
++    public boolean isOptimizedDrawingEnabled() {
++        return false;
++    }
++
++    @Override
++    public void doLayout() {
++        final int w = getWidth();
++        final int h = getHeight();
++        final int top = phaseBar != null ? ArenaPhaseBar.HEIGHT : 0;
++        if (phaseBar != null) {
++            phaseBar.setBounds(0, 0, w, top);
++        }
++        field.getScroller().setBounds(0, top, w, Math.max(0, h - top));
++
++        final int plateH = Math.min(plate.getPreferredSize().height, Math.max(0, h - top - 2 * PLATE_MARGIN));
++        final int plateY = field.isMirror() ? top + PLATE_MARGIN : h - plateH - PLATE_MARGIN;
++        plate.setBounds(PLATE_MARGIN, plateY, PLATE_WIDTH, plateH);
++        field.getTabletop().setReservedLeft(RESERVED_LEFT);
++        // keep a lone card from filling the whole board
++        final int maxCardWidth = Math.max(80, Math.round((h - top) * MAX_CARD_WIDTH_SHARE));
++        if (field.getTabletop().getCardWidthMax() != maxCardWidth) {
++            field.getTabletop().setCardWidthMax(maxCardWidth);
++            field.getTabletop().revalidate();
++        }
++    }
++
++    /** Player plate: avatar with life, name, zone counters, and any poison/energy style counters. */
++    public static class Plate extends JPanel {
++        private final VField field;
++        private final JLabel name = new JLabel("", SwingConstants.CENTER);
++        private final JLabel extras = new JLabel("", SwingConstants.CENTER);
++
++        Plate(final VField field, final Avatar avatar, final PlayerDetailsPanel details) {
++            this.field = field;
++            setOpaque(false);
++            setLayout(new MigLayout("insets 8 6 8 6, gap 0, wrap, hidemode 3", "[center, grow, fill]"));
++            name.setFont(FSkin.getBoldFont(12).getBaseFont());
++            name.setForeground(TEXT);
++            extras.setFont(FSkin.getBoldFont(11).getBaseFont());
++            extras.setForeground(new Color(255, 196, 120));
++            add(avatar, "w 76!, h 84!, alignx center");
++            add(name, "w 10:100%, gaptop 2");
++            add(details, "w 10:100%, gaptop 4");
++            add(extras, "w 10:100%, gaptop 3");
++            refresh();
++        }
++
++        void refresh() {
++            final PlayerView p = field.getPlayer();
++            if (p == null) {
++                return;
++            }
++            name.setText(p.getName());
++            name.setToolTipText(p.getName());
++            final StringBuilder sb = new StringBuilder();
++            appendCounter(sb, "Poison", p.getCounters(CounterEnumType.POISON));
++            appendCounter(sb, "Energy", p.getCounters(CounterEnumType.ENERGY));
++            appendCounter(sb, "Exp", p.getCounters(CounterEnumType.EXPERIENCE));
++            appendCounter(sb, "Rad", p.getCounters(CounterEnumType.RAD));
++            appendCounter(sb, "Tickets", p.getCounters(CounterEnumType.TICKET));
++            extras.setText(sb.length() == 0 ? "" : "<html><center>" + sb + "</center></html>");
++            extras.setVisible(sb.length() > 0);
++            revalidate();
++            repaint();
++        }
++
++        private static void appendCounter(final StringBuilder sb, final String label, final int value) {
++            if (value > 0) {
++                if (sb.length() > 0) {
++                    sb.append("<br>");
++                }
++                sb.append(label).append(' ').append(value);
++            }
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final Graphics2D g2 = (Graphics2D) g.create();
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            final int w = getWidth();
++            final int h = getHeight();
++            g2.setColor(new Color(0, 0, 0, 80));
++            g2.fillRoundRect(1, 3, w - 2, h - 3, 18, 18);
++            g2.setColor(new Color(15, 24, 42, 236));
++            g2.fillRoundRect(0, 0, w - 2, h - 3, 18, 18);
++            final Color ring = field.isMirror() ? RING_OPPONENT : RING_YOU;
++            g2.setColor(new Color(ring.getRed(), ring.getGreen(), ring.getBlue(), 150));
++            g2.drawRoundRect(0, 0, w - 3, h - 4, 18, 18);
++            g2.dispose();
++        }
++    }
++
++    /** Round avatar with a life badge; the field's controller attaches its click handling to it. */
++    public static class Avatar extends JPanel {
++        private final VField field;
++        private boolean hover;
++
++        Avatar(final VField field) {
++            this.field = field;
++            setOpaque(false);
++            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
++            setPreferredSize(new Dimension(76, 84));
++            addMouseListener(new MouseAdapter() {
++                @Override
++                public void mouseEntered(final MouseEvent e) {
++                    hover = true;
++                    repaint();
++                }
++
++                @Override
++                public void mouseExited(final MouseEvent e) {
++                    hover = false;
++                    repaint();
++                }
++            });
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final Graphics2D g2 = (Graphics2D) g.create();
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
++            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
++            final int w = getWidth();
++            final int h = getHeight();
++            final int d = Math.max(10, Math.min(w, h - 12) - 8);
++            final int x = (w - d) / 2;
++            final int y = 4;
++            final boolean highlighted = field.isPlayerHighlighted();
++            final Color ring = highlighted ? GOLD : field.isMirror() ? RING_OPPONENT : RING_YOU;
++
++            if (highlighted || hover) {
++                g2.setColor(new Color(ring.getRed(), ring.getGreen(), ring.getBlue(), highlighted ? 110 : 60));
++                g2.fillOval(x - 4, y - 4, d + 8, d + 8);
++            }
++            final Shape circle = new Ellipse2D.Double(x, y, d, d);
++            g2.setColor(new Color(24, 32, 50));
++            g2.fill(circle);
++            if (field.getAvatarImage() != null) {
++                final Shape oldClip = g2.getClip();
++                g2.clip(circle);
++                FSkin.drawImage(g2, field.getAvatarImage(), x, y, d, d);
++                g2.setClip(oldClip);
++            }
++            g2.setStroke(new BasicStroke(highlighted ? 3f : 2f));
++            g2.setColor(ring);
++            g2.draw(circle);
++
++            final PlayerView p = field.getPlayer();
++            if (p != null) {
++                final String life = String.valueOf(p.getLife());
++                g2.setFont(FSkin.getBoldFont(14).getBaseFont());
++                final FontMetrics fm = g2.getFontMetrics();
++                final int bw = Math.max(34, fm.stringWidth(life) + 16);
++                final int bh = 20;
++                final int bx = (w - bw) / 2;
++                final int by = y + d - bh / 2;
++                g2.setColor(new Color(10, 17, 32));
++                g2.fillRoundRect(bx, by, bw, bh, 10, 10);
++                g2.setStroke(new BasicStroke(1.5f));
++                g2.setColor(ring);
++                g2.drawRoundRect(bx, by, bw, bh, 10, 10);
++                g2.setColor(p.getLife() <= VField.LIFE_CRITICAL ? new Color(255, 96, 86) : Color.WHITE);
++                g2.drawString(life, bx + (bw - fm.stringWidth(life)) / 2, by + (bh - fm.getHeight()) / 2 + fm.getAscent());
++            }
++            g2.dispose();
++        }
++    }
++}
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/VField.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/VField.java
+index a836529481..c748fee160 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/views/VField.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/VField.java
+@@ -57,7 +57,7 @@ import net.miginfocom.swing.MigLayout;
+  * <br><br><i>(V at beginning of class name denotes a view class.)</i>
+  */
+ public class VField implements IVDoc<CField> {
+-    private final static int LIFE_CRITICAL = 5;
++    final static int LIFE_CRITICAL = 5;
+     private final static int POISON_CRITICAL = 8;
+ 
+     // Fields used with interface IVDoc
+@@ -95,6 +95,13 @@ public class VField implements IVDoc<CField> {
+ 
+     private final TabDiffTracker tabDiff = new TabDiffTracker();
+ 
++    // Board-first layout (null in the classic layout)
++    private final boolean mirror;
++    private SkinImage avatarImage;
++    private ArenaFieldPanel.Avatar arenaAvatar;
++    private ArenaFieldPanel.Plate arenaPlate;
++    private ArenaFieldPanel arenaPanel;
++
+ 
+     //========= Constructor
+     /**
+@@ -108,6 +115,7 @@ public class VField implements IVDoc<CField> {
+ 
+         this.matchUI = matchUI;
+         this.player = p;
++        this.mirror = mirror;
+         if (p != null) { tab.setText(Localizer.getInstance().getMessage("lblPlayField", p.getName())); }
+         else { tab.setText(Localizer.getInstance().getMessage("lblNoPlayerForEDocID", docID.toString())); }
+ 
+@@ -157,6 +165,12 @@ public class VField implements IVDoc<CField> {
+ 
+         scroller.setViewportView(this.tabletop);
+ 
++        if (matchUI.isArenaMode()) {
++            arenaAvatar = new ArenaFieldPanel.Avatar(this);
++            detailsPanel.setCompact(true);
++            arenaPlate = new ArenaFieldPanel.Plate(this, arenaAvatar, detailsPanel);
++        }
++
+         updateDetails();
+     }
+ 
+@@ -165,6 +179,15 @@ public class VField implements IVDoc<CField> {
+         final JPanel pnl = parentCell.getBody();
+         pnl.setLayout(new MigLayout("insets 0, gap 0"));
+ 
++        if (arenaPlate != null) {
++            if (arenaPanel == null) {
++                arenaPanel = new ArenaFieldPanel(this, arenaPlate,
++                        docID == EDocID.FIELD_0 ? matchUI.getArenaFrame().getPhaseBar() : null);
++            }
++            pnl.add(arenaPanel, "w 100%!, h 100%!");
++            return;
++        }
++
+         pnl.add(avatarArea, "w 10%!, h 35%!");
+         pnl.add(phaseIndicator, "w 5%!, h 100%!, span 1 2");
+         pnl.add(scroller, "w 85%!, h 100%!, span 1 2, wrap");
+@@ -201,7 +224,7 @@ public class VField implements IVDoc<CField> {
+     }
+ 
+     public JPanel getAvatarArea() {
+-        return this.avatarArea;
++        return arenaAvatar != null ? arenaAvatar : this.avatarArea;
+     }
+ 
+     public PhaseIndicator getPhaseIndicator() {
+@@ -217,8 +240,32 @@ public class VField implements IVDoc<CField> {
+     }
+ 
+     public void setAvatar(final SkinImage avatar) {
++        avatarImage = avatar;
+         lblAvatar.setIcon(avatar);
+         lblAvatar.getResizeTimer().start();
++        if (arenaAvatar != null) {
++            arenaAvatar.repaint();
++        }
++    }
++
++    SkinImage getAvatarImage() {
++        return avatarImage;
++    }
++
++    boolean isMirror() {
++        return mirror;
++    }
++
++    PlayerView getPlayer() {
++        return player;
++    }
++
++    FScrollPane getScroller() {
++        return scroller;
++    }
++
++    boolean isPlayerHighlighted() {
++        return isHighlighted();
+     }
+ 
+     public void updateManaPool() {
+@@ -414,6 +461,11 @@ public class VField implements IVDoc<CField> {
+         this.avatarArea.setBorder(highlighted ? borderAvatarHighlighted : borderAvatarSimple);
+         this.avatarArea.setOpaque(highlighted);
+         this.avatarArea.setToolTipText(getPlayerDetailsHtml());
++        if (arenaAvatar != null) {
++            arenaAvatar.setToolTipText(getPlayerDetailsHtml());
++            arenaAvatar.repaint();
++            arenaPlate.refresh();
++        }
+     }
+ 
+     private String getPlayerDetailsHtml() {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
+index f7253f3713..46b9690bb7 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
+@@ -17,8 +17,13 @@
+  */
+ package forge.screens.match.views;
+ 
++import java.awt.Color;
+ import java.awt.Font;
++import java.awt.GradientPaint;
++import java.awt.Graphics;
++import java.awt.Graphics2D;
+ import java.awt.Insets;
++import java.awt.RenderingHints;
+ import java.awt.event.KeyAdapter;
+ import java.awt.event.KeyEvent;
+ import java.awt.event.MouseAdapter;
+@@ -121,6 +126,11 @@ public class VPrompt implements IVDoc<CPrompt> {
+     	ForgePreferences prefs = FModel.getPreferences();
+         JPanel container = parentCell.getBody();
+ 
++        if (controller.getMatchUI().isArenaMode()) {
++            populateActionPlate(container);
++            return;
++        }
++
+         // wrap   : 2 columns required for btnOk and btnCancel.
+         container.setLayout(new MigLayout("wrap 2, gap 0px!, insets 1px 1px 3px 1px"));
+         if (prefs.getPrefBoolean(FPref.UI_COMPACT_PROMPT)) { //hide header and use smaller font if compact prompt
+@@ -149,6 +159,53 @@ public class VPrompt implements IVDoc<CPrompt> {
+         container.add(btnCancel, constraints);
+     }
+ 
++    /** Board-first layout: message and buttons on a navy plate with a gold edge. */
++    private void populateActionPlate(final JPanel container) {
++        container.setLayout(new MigLayout("insets 4, gap 0"));
++        container.removeAll();
++        if (actionPlate == null) {
++            actionPlate = new ActionPlate();
++        }
++        actionPlate.removeAll();
++        lblGames.setOpaque(false);
++        lblGames.setForeground(new Color(142, 155, 182));
++        tarMessage.setFont(FSkin.getRelativeBoldFont(15));
++        tarMessage.setOpaque(false);
++        messageScroller.setOpaque(false);
++        messageScroller.getViewport().setOpaque(false);
++        messageScroller.setBorder((javax.swing.border.Border) null);
++        btnOK.setFont(FSkin.getBoldFont(16));
++        btnCancel.setFont(FSkin.getBoldFont(14));
++        actionPlate.add(lblGames, "span 2, w 10:100%, h 16!");
++        actionPlate.add(messageScroller, "span 2, w 10:100%, h 0:100%, gaptop 2");
++        actionPlate.add(btnOK, "w 10:56%, h 42!, gaptop 6");
++        actionPlate.add(btnCancel, "w 10:44%, h 42!, gaptop 6");
++        container.add(actionPlate, "w 100%!, h 100%!");
++    }
++
++    private ActionPlate actionPlate;
++
++    @SuppressWarnings("serial")
++    private static final class ActionPlate extends JPanel {
++        ActionPlate() {
++            super(new MigLayout("insets 10 12 10 12, gap 6 0, wrap 2", "[56%][44%]"));
++            setOpaque(false);
++        }
++
++        @Override
++        protected void paintComponent(final Graphics g) {
++            final Graphics2D g2 = (Graphics2D) g.create();
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            final int w = getWidth();
++            final int h = getHeight();
++            g2.setPaint(new GradientPaint(0, 0, new Color(22, 37, 74), 0, h, new Color(15, 26, 51)));
++            g2.fillRoundRect(0, 0, w - 1, h - 1, 16, 16);
++            g2.setColor(new Color(217, 168, 67, 115));
++            g2.drawRoundRect(0, 0, w - 2, h - 2, 16, 16);
++            g2.dispose();
++        }
++    }
++
+     /* (non-Javadoc)
+      * @see forge.gui.framework.IVDoc#setParentCell()
+      */
+diff --git a/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseIndicator.java b/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseIndicator.java
+index 5cd58e5fdf..84bef0e784 100644
+--- a/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseIndicator.java
++++ b/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseIndicator.java
+@@ -40,6 +40,24 @@ public class PhaseIndicator extends JPanel {
+         add(lbl, CONSTRAINTS);
+     }
+ 
++    private boolean horizontal;
++
++    /** Lays the phase stops out in one row of chips (board-first layout). */
++    public void setHorizontal() {
++        if (horizontal) {
++            return;
++        }
++        horizontal = true;
++        removeAll();
++        setLayout(new MigLayout("insets 0, gap 3", "", "[center]"));
++        for (final PhaseLabel lbl : phaseLabels.values()) {
++            lbl.setChipStyle(true);
++            add(lbl, "w 30!, h 20!");
++        }
++        revalidate();
++        repaint();
++    }
++
+     public PhaseLabel getLabelFor(final PhaseType phaseType) {
+         return phaseLabels.get(phaseType);
+     }
+diff --git a/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseLabel.java b/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseLabel.java
+index 4b1457bc26..462f9311fc 100644
+--- a/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseLabel.java
++++ b/forge-gui-desktop/src/main/java/forge/toolbox/special/PhaseLabel.java
+@@ -37,6 +37,16 @@ public class PhaseLabel extends JLabel {
+     private final Timer pressTimer;
+     private Runnable onToggled;
+     private Runnable onRightClick;
++    private boolean chipStyle = false;
++
++    private static final Color CHIP_GOLD = new Color(217, 168, 67);
++    private static final Color CHIP_GOLD_DIM = new Color(125, 102, 56);
++    private static final Color CHIP_STOP = new Color(22, 36, 62);
++    private static final Color CHIP_STOP_EDGE = new Color(100, 160, 230, 190);
++    private static final Color CHIP_OFF = new Color(16, 24, 40);
++    private static final Color CHIP_DARK_TEXT = new Color(26, 18, 6);
++    private static final Color CHIP_TEXT = new Color(233, 237, 245);
++    private static final Color CHIP_OFF_TEXT = new Color(112, 125, 150);
+ 
+ 
+     /**
+@@ -91,6 +101,15 @@ public class PhaseLabel extends JLabel {
+         });
+     }
+ 
++    /** Flat navy/gold chip look used by the board-first phase bar. */
++    public void setChipStyle(final boolean b) {
++        chipStyle = b;
++        if (b) {
++            setFont(FSkin.getBoldFont(10).getBaseFont());
++        }
++        repaintOnlyThisLabel();
++    }
++
+     public boolean isYieldMarked() {
+         return yieldMarked;
+     }
+@@ -158,6 +177,10 @@ public class PhaseLabel extends JLabel {
+ 
+     @Override
+     public void paintComponent(final Graphics g) {
++        if (chipStyle) {
++            paintChip(g);
++            return;
++        }
+         final int w = this.getWidth();
+         final int h = this.getHeight();
+ 
+@@ -201,6 +224,62 @@ public class PhaseLabel extends JLabel {
+         }
+     }
+ 
++    private void paintChip(final Graphics g) {
++        final int w = getWidth();
++        final int h = getHeight();
++        final Graphics2D g2 = (Graphics2D) g.create();
++        try {
++            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
++            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
++            Color fill;
++            Color text;
++            Color edge = null;
++            if (yieldMarked) {
++                fill = YIELD_MARKER_COLOR;
++                text = CHIP_DARK_TEXT;
++            } else if (active) {
++                fill = enabled ? CHIP_GOLD : CHIP_GOLD_DIM;
++                text = CHIP_DARK_TEXT;
++            } else if (enabled) {
++                fill = CHIP_STOP;
++                text = CHIP_TEXT;
++                edge = CHIP_STOP_EDGE;
++            } else {
++                fill = CHIP_OFF;
++                text = CHIP_OFF_TEXT;
++            }
++            if (hover) {
++                fill = new Color(Math.min(255, fill.getRed() + 30), Math.min(255, fill.getGreen() + 30), Math.min(255, fill.getBlue() + 30));
++            }
++            final RoundRectangle2D rr = new RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, 8, 8);
++            if (active && enabled && !yieldMarked) {
++                g2.setColor(new Color(217, 168, 67, 70));
++                g2.fill(new RoundRectangle2D.Float(-1, -1, w + 1, h + 1, 10, 10));
++            }
++            g2.setColor(fill);
++            g2.fill(rr);
++            if (edge != null) {
++                g2.setColor(edge);
++                g2.draw(rr);
++            }
++            if (pressed) {
++                g2.setColor(new Color(0, 0, 0, 60));
++                g2.fill(rr);
++            }
++            if (yieldMarked) {
++                drawChevron(g2, w, h);
++            } else {
++                g2.setFont(getFont());
++                final java.awt.FontMetrics fm = g2.getFontMetrics();
++                final String s = getText();
++                g2.setColor(text);
++                g2.drawString(s, (w - fm.stringWidth(s)) / 2, (h - fm.getHeight()) / 2 + fm.getAscent());
++            }
++        } finally {
++            g2.dispose();
++        }
++    }
++
+     /** Darkens the chip briefly while it is pressed, so a click reads as a physical push before the new state settles. */
+     private void drawPressOverlay(final Graphics g, final int w, final int h) {
+         final Graphics2D g2 = (Graphics2D) g.create();
+diff --git a/forge-gui-desktop/src/main/java/forge/toolbox/special/PlayerDetailsPanel.java b/forge-gui-desktop/src/main/java/forge/toolbox/special/PlayerDetailsPanel.java
+index 2a2cc840e1..626ed4c2f3 100644
+--- a/forge-gui-desktop/src/main/java/forge/toolbox/special/PlayerDetailsPanel.java
++++ b/forge-gui-desktop/src/main/java/forge/toolbox/special/PlayerDetailsPanel.java
+@@ -124,6 +124,52 @@ public class PlayerDetailsPanel extends JPanel {
+         add(row7, constraintsRow);
+     }
+ 
++    private boolean compact;
++
++    /**
++     * Compact form for the board-first player plate: two narrow columns, and flashback,
++     * command, sideboard, extra zones and mana only while they hold something.
++     */
++    public void setCompact(final boolean b) {
++        if (compact == b) {
++            return;
++        }
++        compact = b;
++        removeAll();
++        if (compact) {
++            setLayout(new MigLayout("insets 0, gap 2 2, wrap 2, hidemode 3", "[50%, fill][50%, fill]"));
++            final String cell = "h 20!, w 10:50%";
++            for (final ZoneType z : new ZoneType[] {ZoneType.Hand, ZoneType.Library, ZoneType.Graveyard,
++                    ZoneType.Exile, ZoneType.Flashback, ZoneType.Command, ZoneType.Sideboard}) {
++                add(zoneLabels.get(z), cell);
++            }
++            add(extraLabel, cell);
++            for (final DetailLabelMana label : manaLabels) {
++                add(label, cell);
++            }
++        } else {
++            setLayout(new MigLayout("insets 0, gap 0, wrap"));
++            populateDetails();
++        }
++        updateZones();
++        updateManaPool();
++    }
++
++    private void updateCompactVisibility() {
++        if (!compact) {
++            return;
++        }
++        for (final ZoneType z : new ZoneType[] {ZoneType.Flashback, ZoneType.Command, ZoneType.Sideboard}) {
++            final DetailLabelZone label = zoneLabels.get(z);
++            label.setVisible(player.getZoneSize(z) > 0);
++        }
++        extraLabel.setVisible(!extraLabel.featuredZones.isEmpty());
++        for (final DetailLabelMana label : manaLabels) {
++            label.setVisible(player.getMana(ManaAtom.fromName(label.color)) > 0);
++        }
++        revalidate();
++    }
++
+     public Component getLblLibrary() {
+         return zoneLabels.get(ZoneType.Library);
+     }
+@@ -135,6 +181,7 @@ public class PlayerDetailsPanel extends JPanel {
+         for(DetailLabelZone zone : this.zoneLabels.values())
+             zone.onContentUpdate();
+         extraLabel.onContentUpdate();
++        updateCompactVisibility();
+     }
+ 
+     /**
+@@ -144,6 +191,7 @@ public class PlayerDetailsPanel extends JPanel {
+         for (final DetailLabel label : manaLabels) {
+             label.onContentUpdate();
+         }
++        updateCompactVisibility();
+     }
+ 
+     public void setupMouseActions(Function<ZoneType, Runnable> zoneActionFactory,
+diff --git a/forge-gui-desktop/src/main/java/forge/view/arcane/PlayArea.java b/forge-gui-desktop/src/main/java/forge/view/arcane/PlayArea.java
+index 6d7b2c6aed..0b3d63d729 100644
+--- a/forge-gui-desktop/src/main/java/forge/view/arcane/PlayArea.java
++++ b/forge-gui-desktop/src/main/java/forge/view/arcane/PlayArea.java
+@@ -99,6 +99,8 @@ public class PlayArea extends CardPanelContainer implements CardPanelMouseListen
+     // Computed in layout.
+     private List<CardStackRow> rows = new ArrayList<>();
+     private final List<Rectangle> landRowBands = new ArrayList<>();
++    // Strip on the left kept free of cards (the board-first player plate sits there)
++    private int reservedLeft;
+     private int cardWidth, cardHeight;
+     private int playAreaWidth, playAreaHeight;
+     private int extraCardSpacingX, cardSpacingX, cardSpacingY;
+@@ -440,7 +442,7 @@ public class PlayArea extends CardPanelContainer implements CardPanelMouseListen
+         combatAssignments = buildCombatAssignments();
+         final Rectangle rect = this.getScrollPane().getVisibleRect();
+ 
+-        this.playAreaWidth = rect.width;
++        this.playAreaWidth = Math.max(1, rect.width - reservedLeft);
+         this.playAreaHeight = rect.height;
+ 
+         List<CardPanel> unsorted = new LinkedList<>(this.getCardPanels());
+@@ -523,7 +525,7 @@ public class PlayArea extends CardPanelContainer implements CardPanelMouseListen
+             y = rowBottom;
+             maxRowWidth = Math.max(maxRowWidth, x);
+         }
+-        this.setPreferredSize(new Dimension(maxRowWidth - this.cardSpacingX, y - this.cardSpacingY));
++        this.setPreferredSize(new Dimension(maxRowWidth - this.cardSpacingX + reservedLeft, y - this.cardSpacingY));
+         this.revalidate();
+         positionAllCards(lastTemplate);
+         repaint();
+@@ -576,7 +578,7 @@ public class PlayArea extends CardPanelContainer implements CardPanelMouseListen
+ 
+                     final int panelX = x + (visualPos * this.stackSpacingX);
+                     final int panelY = y + (visualPos * this.stackSpacingY);
+-                    panel.setCardBounds(panelX, panelY, this.getCardWidth(), this.cardHeight);
++                    panel.setCardBounds(panelX + reservedLeft, panelY, this.getCardWidth(), this.cardHeight);
+                     panel.setDisplayEnabled(!hidden);
+                 }
+                 // Exclude attached panels (equipment/auras) — they're pulled
+@@ -598,6 +600,14 @@ public class PlayArea extends CardPanelContainer implements CardPanelMouseListen
+         }
+     }
+ 
++    public void setReservedLeft(final int px) {
++        if (px != reservedLeft) {
++            reservedLeft = px;
++            revalidate();
++            repaint();
++        }
++    }
++
+     private static boolean isLandRow(final CardStackRow row) {
+         if (row.isEmpty() || row.get(0).isEmpty()) {
+             return false;
+diff --git a/forge-gui/src/main/java/forge/localinstance/properties/FileLocation.java b/forge-gui/src/main/java/forge/localinstance/properties/FileLocation.java
+index 49c1f60ddf..eb7d742ab1 100644
+--- a/forge-gui/src/main/java/forge/localinstance/properties/FileLocation.java
++++ b/forge-gui/src/main/java/forge/localinstance/properties/FileLocation.java
+@@ -21,7 +21,7 @@ public final class FileLocation {
+     public final String defaultLoc;
+     public final String userPrefLoc;
+ 
+-    FileLocation (String defaultPrefix, String userPrefix, String commonSuffix) {
++    public FileLocation (String defaultPrefix, String userPrefix, String commonSuffix) {
+         defaultLoc  = defaultPrefix + commonSuffix;
+         userPrefLoc = userPrefix + commonSuffix;
+     }
+diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+index 1d407a1b60..58af0b93a7 100644
+--- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
++++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+@@ -130,6 +130,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_ARENA_HAND_FAN ("true"),
+         UI_ARENA_OPPONENT_HAND ("true"),
+         UI_ARENA_STACK_CARDS ("true"),
++        UI_ARENA_LAYOUT ("true"),
+         UI_PAUSE_WHILE_MINIMIZED("false"),
+         UI_DISPLAY_CURRENT_COLORS(ForgeConstants.DISP_CURRENT_COLORS_NEVER),
+         UI_FILTER_LANDS_BY_COLOR_IDENTITY("true"),
+-- 
+2.43.0
+
