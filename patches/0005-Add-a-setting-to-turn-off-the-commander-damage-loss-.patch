@@ -1,0 +1,146 @@
+From 0151d29ee0b897bb5a4b47c01140c285395d11e8 Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 13:16:31 -0400
+Subject: [PATCH 5/6] Add a setting to turn off the commander damage loss rule
+
+Settings > Gameplay > Commander Damage Loss (on by default). When off,
+21 combat damage from one commander no longer loses the game; damage is
+still tracked and shown. The rule is copied into GameRules when a match
+starts, so it applies to every game mode, and the AI stops treating
+commander damage as lethal when blocking.
+---
+ forge-ai/src/main/java/forge/ai/ComputerUtilCombat.java   | 3 +++
+ forge-game/src/main/java/forge/game/GameRules.java        | 8 ++++++++
+ forge-game/src/main/java/forge/game/player/Player.java    | 2 +-
+ .../forge/screens/home/settings/CSubmenuPreferences.java  | 1 +
+ .../forge/screens/home/settings/VSubmenuPreferences.java  | 8 ++++++++
+ .../src/main/java/forge/gamemodes/match/HostedMatch.java  | 2 ++
+ .../forge/localinstance/properties/ForgePreferences.java  | 1 +
+ 7 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/forge-ai/src/main/java/forge/ai/ComputerUtilCombat.java b/forge-ai/src/main/java/forge/ai/ComputerUtilCombat.java
+index c6af8aa21f..e0ac8615fc 100644
+--- a/forge-ai/src/main/java/forge/ai/ComputerUtilCombat.java
++++ b/forge-ai/src/main/java/forge/ai/ComputerUtilCombat.java
+@@ -366,6 +366,9 @@ public class ComputerUtilCombat {
+ 
+     public static List<Card> getLifeThreateningCommanders(final Player ai, final Combat combat) {
+         List<Card> res = Lists.newArrayList();
++        if (!ai.getGame().getRules().hasCommanderDamageLoss()) {
++            return res;
++        }
+         for (Card c : combat.getAttackers()) {
+             if (c.isCommander() && combat.isAttacking(c, ai)) {
+                 int currentCommanderDamage = ai.getCommanderDamage(c);
+diff --git a/forge-game/src/main/java/forge/game/GameRules.java b/forge-game/src/main/java/forge/game/GameRules.java
+index 6ed988583e..7734231447 100644
+--- a/forge-game/src/main/java/forge/game/GameRules.java
++++ b/forge-game/src/main/java/forge/game/GameRules.java
+@@ -7,6 +7,7 @@ public class GameRules {
+     private final GameType gameType;
+     private boolean manaBurn;
+     private boolean orderCombatants;
++    private boolean commanderDamageLoss = true; // rule 903.10a: 21 combat damage from one commander
+     private int poisonCountersToLose = 10; // is commonly 10, but turns into 15 for 2HG
+     private int gamesPerMatch = 3;
+     private int gamesToWinMatch = 2;
+@@ -40,6 +41,13 @@ public class GameRules {
+         this.manaBurn = manaBurn;
+     }
+ 
++    public boolean hasCommanderDamageLoss() {
++        return commanderDamageLoss;
++    }
++    public void setCommanderDamageLoss(final boolean commanderDamageLoss) {
++        this.commanderDamageLoss = commanderDamageLoss;
++    }
++
+     public boolean hasOrderCombatants() {
+         return orderCombatants;
+     }
+diff --git a/forge-game/src/main/java/forge/game/player/Player.java b/forge-game/src/main/java/forge/game/player/Player.java
+index 8bd41a773c..ffc99e36e3 100644
+--- a/forge-game/src/main/java/forge/game/player/Player.java
++++ b/forge-game/src/main/java/forge/game/player/Player.java
+@@ -2049,7 +2049,7 @@ public class Player extends GameEntity implements Comparable<Player> {
+             return true;
+         }
+ 
+-        if (game.getRules().hasAppliedVariant(GameType.Commander)) {
++        if (game.getRules().hasAppliedVariant(GameType.Commander) && game.getRules().hasCommanderDamageLoss()) {
+             for (Entry<Card, Integer> entry : getCommanderDamage()) {
+                 if (entry.getValue() >= 21 && loseConditionMet(GameLossReason.CommanderDamage, null)) {
+                     return true;
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
+index b6f719c3de..003c6c4c49 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
+@@ -107,6 +107,7 @@ public enum CSubmenuPreferences implements ICDoc {
+         lstControls.add(Pair.of(view.getCbAnteMatchRarity(), FPref.UI_ANTE_MATCH_RARITY));
+         lstControls.add(Pair.of(view.getCbAnteIncludeBasicLands(), FPref.UI_ANTE_INCLUDE_BASIC_LANDS));
+         lstControls.add(Pair.of(view.getCbManaBurn(), FPref.LEGACY_MANABURN));
++        lstControls.add(Pair.of(view.getCbCommanderDamageLoss(), FPref.COMMANDER_DAMAGE_LOSS));
+         lstControls.add(Pair.of(view.getCbOrderCombatants(), FPref.LEGACY_ORDER_COMBATANTS));
+         lstControls.add(Pair.of(view.getCbScaleLarger(), FPref.UI_SCALE_LARGER));
+         lstControls.add(Pair.of(view.getCbRenderBlackCardBorders(), FPref.UI_RENDER_BLACK_BORDERS));
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+index d67653b966..291e570624 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+@@ -80,6 +80,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+     private final JCheckBox cbAnteIncludeBasicLands = new OptionsCheckBox(localizer.getMessage("cbAnteIncludeBasicLands"));
+     private final JCheckBox cbEnableAICheats = new OptionsCheckBox(localizer.getMessage("cbEnableAICheats"));
+     private final JCheckBox cbManaBurn = new OptionsCheckBox(localizer.getMessage("cbManaBurn"));
++    private final JCheckBox cbCommanderDamageLoss = new OptionsCheckBox("Commander Damage Loss");
+     private final JCheckBox cbOrderCombatants = new OptionsCheckBox(localizer.getMessage("cbOrderCombatants"));
+     private final JCheckBox cbManaLostPrompt = new OptionsCheckBox(localizer.getMessage("cbManaLostPrompt"));
+     private final JCheckBox cbDevMode = new OptionsCheckBox(localizer.getMessage("cbDevMode"));
+@@ -244,6 +245,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+         pnlPrefs.add(cbManaBurn, titleConstraints);
+         pnlPrefs.add(new NoteLabel(localizer.getMessage("nlManaBurn")), descriptionConstraints);
+ 
++        pnlPrefs.add(cbCommanderDamageLoss, titleConstraints);
++        pnlPrefs.add(new NoteLabel("In Commander games, a player who takes 21 or more combat damage from a single commander loses. Turn off to ignore commander damage (it is still counted and shown). Applies from the next match."), descriptionConstraints);
++
+         pnlPrefs.add(cbOrderCombatants, titleConstraints);
+         pnlPrefs.add(new NoteLabel(localizer.getMessage("nlOrderCombatants")), descriptionConstraints);
+ 
+@@ -922,6 +926,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+         return cbManaBurn;
+     }
+ 
++    public JCheckBox getCbCommanderDamageLoss() {
++        return cbCommanderDamageLoss;
++    }
++
+     public JCheckBox getCbOrderCombatants() {
+         return cbOrderCombatants;
+     }
+diff --git a/forge-gui/src/main/java/forge/gamemodes/match/HostedMatch.java b/forge-gui/src/main/java/forge/gamemodes/match/HostedMatch.java
+index 2fffd23b11..b9273396fa 100644
+--- a/forge-gui/src/main/java/forge/gamemodes/match/HostedMatch.java
++++ b/forge-gui/src/main/java/forge/gamemodes/match/HostedMatch.java
+@@ -123,6 +123,8 @@ public class HostedMatch {
+         if (appliedVariants != null && !appliedVariants.isEmpty()) {
+             gameRules.setAppliedVariants(appliedVariants);
+         }
++        // set here so every game mode (lobby, gauntlet, puzzle...) follows the setting
++        gameRules.setCommanderDamageLoss(FModel.getPreferences().getPrefBoolean(FPref.COMMANDER_DAMAGE_LOSS));
+ 
+         final List<RegisteredPlayer> sortedPlayers = Lists.newArrayList(players);
+         sortedPlayers.sort((p1, p2) -> {
+diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+index 897e0c26bd..0defa58f78 100644
+--- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
++++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
+@@ -224,6 +224,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+         UI_ANTE_INCLUDE_BASIC_LANDS ("false"),
+ 
+         LEGACY_MANABURN("false"),
++        COMMANDER_DAMAGE_LOSS("true"),
+         LEGACY_ORDER_COMBATANTS("false"),
+ 
+         DEV_MODE_ENABLED ("false"),
+-- 
+2.43.0
+

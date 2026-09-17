@@ -7,7 +7,7 @@ A modded build of [Forge](https://github.com/Card-Forge/forge), the free Magic: 
 ## Download and play
 
 1. **Install Java 17 or newer.** If you don't have it, get [Temurin](https://adoptium.net) (choose the latest LTS for your system).
-2. **Download** `forge-arena-mod-1.1.zip` from the [latest release](../../releases/latest) (about 225 MB) and unzip it anywhere.
+2. **Download** `forge-arena-mod-1.2.zip` from the [latest release](../../releases/latest) (about 225 MB) and unzip it anywhere.
 3. **Start Forge** from the unzipped folder:
    - **Windows:** double-click `forge.exe`
    - **macOS:** double-click `forge.command`. The first time, right-click it and choose **Open**.
@@ -56,6 +56,7 @@ Everything below is on by default. Each item can be switched off in **Settings �
 
 **Rules and settings**
 - **Friendly mulligan:** mulligan as often as you like and always draw a full 7, with nothing put on the bottom. AI opponents stop after 3. You can switch back to London or another rule in Settings → Gameplay → Mulligan Rule.
+- **Commander damage switch:** Settings → Gameplay → **Commander Damage Loss** (on by default). Turn it off and 21 combat damage from one commander no longer knocks a player out; the damage is still counted and shown. In online games, the host's setting applies to everyone.
 - **Settings page:** a search box and section buttons that stay at the top while you scroll.
 
 ![Log drawer open](screenshots/drawer.jpg)

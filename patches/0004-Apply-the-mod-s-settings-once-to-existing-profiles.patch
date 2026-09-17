@@ -1,7 +1,7 @@
 From 53dcac866899245aa4547f7f0ab36d1392ae5a4d Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Wed, 16 Sep 2026 16:53:37 -0400
-Subject: [PATCH 4/4] Apply the mod's settings once to existing profiles
+Subject: [PATCH 4/6] Apply the mod's settings once to existing profiles
 
 Players who already used stock Forge have every setting saved, so the
 mod's new defaults never reached them. The first time the mod runs on a

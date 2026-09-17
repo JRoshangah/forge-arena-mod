@@ -1,0 +1,307 @@
+From 5e52e1fe67deb36a34eab5cfd9112aedb3e03976 Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 13:33:56 -0400
+Subject: [PATCH 6/6] Fix settings jump bar overflow, uneven action buttons and
+ stray panels
+
+- Settings section buttons pick a column count that fits the window and
+  balance the rows, so no button is cut off.
+- OK / Cancel pills in the action plate are equal width and shrink their
+  label to fit before truncating ("Alpha Strike" in combat).
+- Board-first layout: zones always open as floating windows instead of
+  docking as tabs into the hand panel, floating zones can't be docked,
+  and only the designed six-panel layout is saved. A saved layout with
+  multiplayer splits or docked zones is discarded when a match starts.
+---
+ .../java/forge/gui/framework/SLayoutIO.java   |  5 ++
+ .../home/settings/VSubmenuPreferences.java    | 44 +++++++++++--
+ .../java/forge/screens/match/ArenaFrame.java  | 63 ++++++++++++++++++-
+ .../screens/match/views/ArenaButton.java      | 12 +++-
+ .../forge/screens/match/views/VPrompt.java    | 10 +--
+ .../java/forge/view/arcane/FloatingZone.java  | 10 +--
+ 6 files changed, 128 insertions(+), 16 deletions(-)
+
+diff --git a/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java b/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
+index cd626d44ae..23ebae7b2e 100644
+--- a/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
++++ b/forge-gui-desktop/src/main/java/forge/gui/framework/SLayoutIO.java
+@@ -274,6 +274,11 @@ public final class SLayoutIO {
+             fWriteTo = f0.getPath();
+         }
+ 
++        if (f0 == null && file == forge.screens.match.ArenaFrame.LAYOUT_FILE
++                && !forge.screens.match.ArenaFrame.isSavable(FView.SINGLETON_INSTANCE.getDragCells())) {
++            return; // keep the board-first layout free of multiplayer splits and docked zones
++        }
++
+         final XMLOutputFactory out = XMLOutputFactory.newInstance();
+         XMLEventWriter writer = null;
+         try(FileOutputStream fos = new FileOutputStream(fWriteTo);) {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+index 291e570624..8c782fb876 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
+@@ -51,7 +51,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+     private final JPanel pnlPrefs = new JPanel();
+     private final JPanel pnlHeader = new JPanel();
+     private final Map<Component, FLabel> jumpButtons = new LinkedHashMap<>();
+-    private static final int JUMP_BUTTONS_PER_ROW = 6;
++    private static final int JUMP_GAP = 4;
++    private static final int JUMP_TEXT_PADDING = 18;
++    private final JPanel pnlJump = new JPanel();
++    private int jumpColumns;
+     private static final javax.swing.border.Border JUMP_ACTIVE_BORDER = BorderFactory.createMatteBorder(0, 0, 3, 0, new Color(255, 190, 70));
+     private static final javax.swing.border.Border JUMP_IDLE_BORDER = BorderFactory.createEmptyBorder(0, 0, 3, 0);
+     private final FScrollPane scrContent = new FScrollPane(pnlPrefs, false,
+@@ -578,8 +581,6 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+         pnlHeader.setLayout(new MigLayout("insets 0, gap 0, wrap, fillx"));
+         pnlHeader.add(getSearchPanel(), "w 80%!, h 28px!, gap 25px 0 6px 8px");
+ 
+-        final JPanel pnlJump = new JPanel(new MigLayout("insets 0, gap 4px 4px, wrap " + JUMP_BUTTONS_PER_ROW + ", fillx",
+-                "", "[]"));
+         pnlJump.setOpaque(false);
+         for (final Component comp : pnlPrefs.getComponents()) {
+             if (!(comp instanceof SectionLabel)) {
+@@ -589,15 +590,50 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+             final FLabel btn = new FLabel.Builder().opaque(true).hoverable(true).fontSize(12)
+                     .text(header.getText()).tooltip(header.getText()).build();
+             btn.setCommand((Runnable) () -> jumpTo(header));
+-            pnlJump.add(btn, "h 26px!, growx, sg jump");
+             jumpButtons.put(header, btn);
+         }
++        layoutJumpButtons(6);
+         pnlHeader.add(pnlJump, "w 80%!, gap 25px 0 0 8px");
++        pnlHeader.addComponentListener(new java.awt.event.ComponentAdapter() {
++            @Override
++            public void componentResized(final java.awt.event.ComponentEvent e) {
++                fitJumpButtons();
++            }
++        });
+ 
+         scrContent.getVerticalScrollBar().addAdjustmentListener(e -> updateActiveSection());
+         SwingUtilities.invokeLater(this::updateActiveSection);
+     }
+ 
++    /** Picks the most columns whose buttons still fit, then evens out the rows (6+5 rather than 10+1). */
++    private void fitJumpButtons() {
++        final int available = (int) (pnlHeader.getWidth() * 0.8);
++        if (available <= 0 || jumpButtons.isEmpty()) {
++            return;
++        }
++        int widest = 0;
++        for (final FLabel btn : jumpButtons.values()) {
++            widest = Math.max(widest, btn.getPreferredSize().width + JUMP_TEXT_PADDING);
++        }
++        final int count = jumpButtons.size();
++        final int maxColumns = Math.max(1, Math.min(count, (available + JUMP_GAP) / (widest + JUMP_GAP)));
++        final int rows = (count + maxColumns - 1) / maxColumns;
++        final int columns = (count + rows - 1) / rows;
++        if (columns != jumpColumns) {
++            layoutJumpButtons(columns);
++            pnlHeader.revalidate();
++        }
++    }
++
++    private void layoutJumpButtons(final int columns) {
++        jumpColumns = columns;
++        pnlJump.removeAll();
++        pnlJump.setLayout(new MigLayout("insets 0, gap " + JUMP_GAP + "px " + JUMP_GAP + "px, wrap " + columns + ", fillx"));
++        for (final FLabel btn : jumpButtons.values()) {
++            pnlJump.add(btn, "h 26px!, w 0:0:max, growx, sg jump");
++        }
++    }
++
+     private void jumpTo(final Component header) {
+         if (!txtSearch.getText().isEmpty()) {
+             // a filtered view may hide the target section
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
+index dc39a03847..a89a0696da 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/ArenaFrame.java
+@@ -8,8 +8,14 @@ import java.io.File;
+ import java.io.IOException;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
++import java.util.ArrayList;
+ import java.util.EnumMap;
++import java.util.HashSet;
++import java.util.List;
+ import java.util.Map;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
+ 
+ import javax.swing.JPanel;
+ 
+@@ -66,9 +72,64 @@ public final class ArenaFrame {
+     static final EDocID[] DRAWER_DOCS = {
+             EDocID.REPORT_STACK, EDocID.REPORT_COMBAT, EDocID.REPORT_LOG, EDocID.REPORT_DEPENDENCIES };
+ 
++    /** The only docs a saved board-first layout may hold, one cell each. */
++    private static final Set<String> LAYOUT_DOCS = Set.of(
++            "FIELD_0", "FIELD_1", "HAND_0", "CARD_PICTURE", "CARD_DETAIL", "REPORT_MESSAGE");
++    private static final Pattern DOC_TAG = Pattern.compile("<doc>\\s*([A-Z_0-9]+)\\s*</doc>");
++    private static final Pattern CELL_TAG = Pattern.compile("<cell[\\s>]");
++
+     /** True when the board-first layout is switched on and its default layout file is available. */
+     public static boolean isRequested() {
+-        return FModel.getPreferences().getPrefBoolean(FPref.UI_ARENA_LAYOUT) && ensureDefaultLayout();
++        if (!FModel.getPreferences().getPrefBoolean(FPref.UI_ARENA_LAYOUT) || !ensureDefaultLayout()) {
++            return false;
++        }
++        discardInvalidUserLayout();
++        return true;
++    }
++
++    /**
++     * A layout saved during a multiplayer game or with a docked zone has extra cells; loading it
++     * into a two-player game leaves odd gaps, so fall back to the designed layout instead.
++     */
++    private static void discardInvalidUserLayout() {
++        final File file = new File(LAYOUT_FILE.userPrefLoc);
++        if (!file.exists()) {
++            return;
++        }
++        try {
++            final String xml = Files.readString(file.toPath(), StandardCharsets.UTF_8);
++            final List<String> docs = new ArrayList<>();
++            final Matcher m = DOC_TAG.matcher(xml);
++            while (m.find()) {
++                docs.add(m.group(1));
++            }
++            int cells = 0;
++            final Matcher c = CELL_TAG.matcher(xml);
++            while (c.find()) {
++                cells++;
++            }
++            if (!isDesignedLayout(docs, cells)) {
++                Files.delete(file.toPath());
++                System.out.println("Board-first layout: reset " + file + " (it held " + docs + ")");
++            }
++        } catch (final IOException e) {
++            System.err.println("Board-first layout: could not check " + file + ": " + e.getMessage());
++        }
++    }
++
++    private static boolean isDesignedLayout(final List<String> docs, final int cells) {
++        return cells == LAYOUT_DOCS.size() && docs.size() == LAYOUT_DOCS.size() && new HashSet<>(docs).equals(LAYOUT_DOCS);
++    }
++
++    /** Called before saving: only the designed six-cell arrangement (with the user's sizes) is kept. */
++    public static boolean isSavable(final List<DragCell> cells) {
++        final List<String> docs = new ArrayList<>();
++        for (final DragCell cell : cells) {
++            for (final IVDoc<? extends ICDoc> doc : cell.getDocs()) {
++                docs.add(doc.getDocumentID().name());
++            }
++        }
++        return isDesignedLayout(docs, cells.size());
+     }
+ 
+     private static boolean ensureDefaultLayout() {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaButton.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaButton.java
+index ff5e6d85b4..bbeae9dee0 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaButton.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaButton.java
+@@ -28,6 +28,8 @@ public class ArenaButton extends FButton {
+     private static final Color OUTLINE = new Color(255, 255, 255, 70);
+     private static final Color FOCUS = new Color(255, 255, 255, 170);
+ 
++    private static final float MIN_FONT_SIZE = 10f;
++
+     private final boolean primary;
+ 
+     public ArenaButton(final String label, final boolean primary) {
+@@ -87,9 +89,15 @@ public class ArenaButton extends FButton {
+ 
+         final String text = getText();
+         if (text != null && !text.isEmpty()) {
+-            g2.setFont(getFont());
++            final int room = w - arc / 2;
++            // shrink the label before resorting to "…" (e.g. "Alpha Strike" in a narrow column)
++            java.awt.Font font = getFont();
++            while (font.getSize2D() > MIN_FONT_SIZE && g2.getFontMetrics(font).stringWidth(text) > room) {
++                font = font.deriveFont(font.getSize2D() - 0.5f);
++            }
++            g2.setFont(font);
+             final FontMetrics fm = g2.getFontMetrics();
+-            final String shown = fit(text, fm, w - arc / 2);
++            final String shown = fit(text, fm, room);
+             final int tx = 1 + (w - fm.stringWidth(shown)) / 2;
+             final int ty = 1 + dy + (h - fm.getHeight()) / 2 + fm.getAscent();
+             if (primary) {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
+index 46b9690bb7..e31b52025d 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/VPrompt.java
+@@ -174,12 +174,12 @@ public class VPrompt implements IVDoc<CPrompt> {
+         messageScroller.setOpaque(false);
+         messageScroller.getViewport().setOpaque(false);
+         messageScroller.setBorder((javax.swing.border.Border) null);
+-        btnOK.setFont(FSkin.getBoldFont(16));
+-        btnCancel.setFont(FSkin.getBoldFont(14));
++        btnOK.setFont(FSkin.getBoldFont(15));
++        btnCancel.setFont(FSkin.getBoldFont(15));
+         actionPlate.add(lblGames, "span 2, w 10:100%, h 16!");
+         actionPlate.add(messageScroller, "span 2, w 10:100%, h 0:100%, gaptop 2");
+-        actionPlate.add(btnOK, "w 10:56%, h 42!, gaptop 6");
+-        actionPlate.add(btnCancel, "w 10:44%, h 42!, gaptop 6");
++        actionPlate.add(btnOK, "w 10:0:max, growx, sg action, h 42!, gaptop 6");
++        actionPlate.add(btnCancel, "w 10:0:max, growx, sg action, h 42!, gaptop 6");
+         container.add(actionPlate, "w 100%!, h 100%!");
+     }
+ 
+@@ -188,7 +188,7 @@ public class VPrompt implements IVDoc<CPrompt> {
+     @SuppressWarnings("serial")
+     private static final class ActionPlate extends JPanel {
+         ActionPlate() {
+-            super(new MigLayout("insets 10 12 10 12, gap 6 0, wrap 2", "[56%][44%]"));
++            super(new MigLayout("insets 10 12 10 12, gap 6 0, wrap 2", "[50%, fill][50%, fill]"));
+             setOpaque(false);
+         }
+ 
+diff --git a/forge-gui-desktop/src/main/java/forge/view/arcane/FloatingZone.java b/forge-gui-desktop/src/main/java/forge/view/arcane/FloatingZone.java
+index 0bb5bb2565..5e62f2f58c 100644
+--- a/forge-gui-desktop/src/main/java/forge/view/arcane/FloatingZone.java
++++ b/forge-gui-desktop/src/main/java/forge/view/arcane/FloatingZone.java
+@@ -121,7 +121,9 @@ public class FloatingZone extends FloatingCardArea {
+     public static void showOrHide(final CMatchUI matchUI, final PlayerView player, final ZoneType zone) {
+         // If a VHand tab already exists for this player (default layout) and tab mode
+         // is active, just select the existing tab instead of creating a duplicate.
+-        if (zone == ZoneType.Hand && isTabMode(zone, matchUI.isLocalPlayer(player))) {
++        // the board-first layout has no tab strips: zones always open as windows there
++        final boolean arena = matchUI.isArenaMode();
++        if (!arena && zone == ZoneType.Hand && isTabMode(zone, matchUI.isLocalPlayer(player))) {
+             final VHand existingHand = matchUI.getHandFor(player);
+             if (existingHand != null && existingHand.getParentCell() != null) {
+                 SDisplayUtil.showTab(existingHand);
+@@ -130,7 +132,7 @@ public class FloatingZone extends FloatingCardArea {
+         }
+ 
+         final int key = getKey(player, zone);
+-        final VZone docked = dockedZones.get(key);
++        final VZone docked = arena ? null : dockedZones.get(key);
+         if (docked != null) {
+             final DragCell cell = docked.getParentCell();
+             if (cell != null) {
+@@ -150,7 +152,7 @@ public class FloatingZone extends FloatingCardArea {
+ 
+         // No existing docked zone — check tab mode preference
+         final boolean isOwn = matchUI.isLocalPlayer(player);
+-        if (isTabMode(zone, isOwn)) {
++        if (!arena && isTabMode(zone, isOwn)) {
+             showAsTab(matchUI, player, zone);
+             return;
+         }
+@@ -462,7 +464,7 @@ public class FloatingZone extends FloatingCardArea {
+         final int ey = (int) e.getLocationOnScreen().getY();
+ 
+         DragCell newTarget = null;
+-        for (final DragCell cell : FView.SINGLETON_INSTANCE.getDragCells()) {
++        for (final DragCell cell : getMatchUI().isArenaMode() ? List.<DragCell>of() : FView.SINGLETON_INSTANCE.getDragCells()) {
+             final int cx = cell.getAbsX();
+             final int cy = cell.getAbsY();
+             final int cw = cell.getW();
+-- 
+2.43.0
+
