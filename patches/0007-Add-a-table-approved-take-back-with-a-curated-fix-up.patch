@@ -1,0 +1,1007 @@
+From 50fba0d1cf8fc0527443e673392bb004ff42350c Mon Sep 17 00:00:00 2001
+From: jrosha <114847463+JRoshangah@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 15:43:44 -0400
+Subject: [PATCH 7/7] Add a table-approved take-back with a curated fix-up tool
+ set
+
+A player can ask the table to undo a misplay. Every other human has to
+allow it, and the requester then gets a two-minute window with a small
+set of board fix-ups. Nothing is rewound by the engine: the board is
+corrected by hand, and the game log records the request and the result.
+
+- TakeBackCoordinator keeps the request on the host - who asked, how each
+  human voted, and how long the window has left. AI opponents do not vote,
+  so a game against AI alone grants straight away. A vote nobody answers
+  lapses after a minute.
+- TakeBackTools runs the fix-ups: untap, tap, move a card to another zone,
+  set a life total, add or remove counters, refill mana. All but the card
+  move reuse the matching Dev Mode action, whose prompts already work for
+  a network client because the host runs that client's controller.
+- takeBackAction and takeBackTool travel over IGameController and the net
+  protocol, and the host refuses a tool unless that player's window is
+  open, so a client cannot reach the fix-ups any other way.
+- VTakeBackDialog is one non-modal dialog that turns from a vote tally
+  into the tool box, a watcher notice, or the outcome, with a countdown.
+---
+ .../java/forge/screens/match/CMatchUI.java    |  42 +++
+ .../forge/screens/match/menus/GameMenu.java   |   9 +
+ .../screens/match/views/VTakeBackDialog.java  | 265 ++++++++++++++++++
+ .../gamemodes/match/TakeBackCoordinator.java  | 227 +++++++++++++++
+ .../gamemodes/match/TakeBackMessage.java      |  84 ++++++
+ .../forge/gamemodes/net/ProtocolMethod.java   |   4 +
+ .../net/client/NetGameController.java         |  12 +
+ .../net/server/RemoteClientGuiGame.java       |   5 +
+ .../java/forge/gui/interfaces/IGuiGame.java   |   3 +
+ .../forge/interfaces/IGameController.java     |   7 +
+ .../forge/player/PlayerControllerHuman.java   |  22 ++
+ .../main/java/forge/player/TakeBackTools.java | 106 +++++++
+ 12 files changed, 786 insertions(+)
+ create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/views/VTakeBackDialog.java
+ create mode 100644 forge-gui/src/main/java/forge/gamemodes/match/TakeBackCoordinator.java
+ create mode 100644 forge-gui/src/main/java/forge/gamemodes/match/TakeBackMessage.java
+ create mode 100644 forge-gui/src/main/java/forge/player/TakeBackTools.java
+
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
+index 52553e8bdc..1d1ece37cd 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
+@@ -67,6 +67,7 @@ import forge.game.spellability.StackItemView;
+ import forge.game.zone.ZoneType;
+ import forge.util.IHasForgeLog;
+ import forge.gamemodes.match.DrawOfferMessage;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldMarker;
+ import forge.gamemodes.net.NetworkGuiGame;
+ import forge.gamemodes.net.client.FGameClient;
+@@ -110,6 +111,7 @@ import forge.screens.match.controllers.CStack;
+ import forge.screens.match.menus.CMatchUIMenus;
+ import forge.screens.match.views.VDrawOfferDialog;
+ import forge.screens.match.views.VField;
++import forge.screens.match.views.VTakeBackDialog;
+ import forge.screens.match.views.VHand;
+ import forge.toolbox.FButton;
+ import forge.toolbox.FLabel;
+@@ -242,6 +244,46 @@ public final class CMatchUI
+     }
+ 
+     private VDrawOfferDialog drawOfferDialog;
++    private VTakeBackDialog takeBackDialog;
++
++    @Override
++    public void updateTakeBack(final TakeBackMessage.Status update) {
++        FThreads.invokeInEdtNowOrLater(() -> {
++            final PlayerView local = localPlayerFor(update);
++            if (update.isOver()) {
++                // Only tell the players who still have the dialog open; a player who already
++                // voted or pressed Done has dismissed it and doesn't need it back.
++                if (takeBackDialog != null) {
++                    if (takeBackDialog.isVisible()) {
++                        takeBackDialog.refresh(update, local);
++                    } else {
++                        takeBackDialog.dispose();
++                    }
++                    takeBackDialog = null;
++                }
++                return;
++            }
++            if (takeBackDialog == null) {
++                takeBackDialog = new VTakeBackDialog(this);
++            }
++            takeBackDialog.refresh(update, local);
++        });
++    }
++
++    /** The local player this take-back concerns: the one who owes a vote, else the requester. */
++    private PlayerView localPlayerFor(final TakeBackMessage.Status update) {
++        for (final PlayerView lp : getLocalPlayers()) {
++            if (update.isPending(lp)) {
++                return lp;
++            }
++        }
++        for (final PlayerView lp : getLocalPlayers()) {
++            if (update.isRequester(lp)) {
++                return lp;
++            }
++        }
++        return null;
++    }
+ 
+     @Override
+     public void updateDrawOffer(final DrawOfferMessage.Status update) {
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/menus/GameMenu.java b/forge-gui-desktop/src/main/java/forge/screens/match/menus/GameMenu.java
+index 4281a454b1..1d37eb56d2 100644
+--- a/forge-gui-desktop/src/main/java/forge/screens/match/menus/GameMenu.java
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/menus/GameMenu.java
+@@ -10,6 +10,7 @@ import javax.swing.event.MenuListener;
+ 
+ import forge.control.KeyboardShortcuts;
+ import forge.gamemodes.match.DrawOfferMessage;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldController;
+ import forge.gamemodes.match.YieldUpdate;
+ import forge.localinstance.properties.ForgePreferences;
+@@ -39,6 +40,7 @@ public final class GameMenu {
+         menu.add(getMenuItem_Undo());
+         menu.add(getMenuItem_Concede());
+         menu.add(getMenuItem_OfferDraw());
++        menu.add(getMenuItem_TakeBack());
+         menu.add(getMenuItem_EndTurn());
+         menu.add(getMenuItem_AlphaStrike());
+         menu.addSeparator();
+@@ -88,6 +90,13 @@ public final class GameMenu {
+         return menuItem;
+     }
+ 
++    private SkinnedMenuItem getMenuItem_TakeBack() {
++        final SkinnedMenuItem menuItem = new SkinnedMenuItem("Request Take-Back...");
++        menuItem.setToolTipText("Ask the table to let you fix the board after a misplay.");
++        menuItem.addActionListener(e -> matchUI.getGameController().takeBackAction(TakeBackMessage.Action.REQUEST));
++        return menuItem;
++    }
++
+     private SkinnedMenuItem getMenuItem_EndTurn() {
+         final Localizer localizer = Localizer.getInstance();
+         final SkinnedMenuItem menuItem = new SkinnedMenuItem(localizer.getMessage("lblEndTurn"));
+diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/views/VTakeBackDialog.java b/forge-gui-desktop/src/main/java/forge/screens/match/views/VTakeBackDialog.java
+new file mode 100644
+index 0000000000..0f22a49036
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/screens/match/views/VTakeBackDialog.java
+@@ -0,0 +1,265 @@
++package forge.screens.match.views;
++
++import javax.swing.SwingConstants;
++import javax.swing.Timer;
++
++import forge.game.player.PlayerView;
++import forge.gamemodes.match.TakeBackMessage;
++import forge.gui.UiCommand;
++import forge.screens.match.CMatchUI;
++import forge.toolbox.FButton;
++import forge.toolbox.FLabel;
++import forge.view.FDialog;
++
++/**
++ * Non-modal dialog for the take-back flow. One instance is kept by {@link CMatchUI} and
++ * {@link #refresh} is called on every broadcast, so it turns from a vote prompt into the
++ * fix-up tool box (for the player who was granted the window) or a read-only notice (for
++ * everyone else) without ever stealing the board.
++ */
++@SuppressWarnings("serial")
++public class VTakeBackDialog extends FDialog {
++    private static final int PADDING = 12;
++    private static final int WIDTH = 380;
++    private static final int ROW_HEIGHT = 22;
++    private static final int BUTTON_WIDTH = 120;
++    private static final int BUTTON_HEIGHT = 28;
++    private static final int TOOL_HEIGHT = 30;
++    private static final int TOOL_GAP = 6;
++
++    private final CMatchUI matchUI;
++    /** The local player this dialog is acting for: the voter, or the holder of the window. */
++    private PlayerView localPlayer;
++    /** True while the local player holds a live window, so closing the dialog hands it back. */
++    private boolean holdsWindow;
++    private boolean closingInternally;
++
++    /** Bumped on every broadcast, so an action can tell whether new state arrived while it ran. */
++    private int refreshes;
++
++    private final Timer clock;
++    private FLabel clockLabel;
++    private long deadlineMs;
++
++    public VTakeBackDialog(final CMatchUI matchUI) {
++        super(false, false, "0");
++        this.matchUI = matchUI;
++        setTitle("Take-back");
++        clock = new Timer(1000, e -> tick());
++        clock.setRepeats(true);
++    }
++
++    /** Rebuild the dialog for {@code update} as seen by {@code local} (null for a bystander). */
++    public void refresh(final TakeBackMessage.Status update, final PlayerView local) {
++        this.localPlayer = local;
++        refreshes++;
++        getContentPane().removeAll();
++        clockLabel = null;
++
++        final int w = WIDTH - 2 * PADDING;
++        int y = PADDING;
++
++        if (update.isOver()) {
++            holdsWindow = false;
++            clock.stop();
++            y = addWrapped(resultText(update), y, w, 2);
++            y += 6;
++            y = addCentered(new String[] { "Close" }, new Runnable[] { this::dispose }, y);
++            finishLayout(y + PADDING);
++            return;
++        }
++
++        startClock(update.secondsLeft());
++
++        if (update.phase() == TakeBackMessage.Phase.GRANTED) {
++            holdsWindow = local != null && update.isRequester(local);
++            y = holdsWindow ? layoutTools(update, y, w) : layoutWatching(update, y, w);
++        } else {
++            holdsWindow = false;
++            y = layoutVoting(update, local, y, w);
++        }
++        finishLayout(y + PADDING);
++    }
++
++    /** The fix-up tool box, shown only to the player the table agreed to help. */
++    private int layoutTools(final TakeBackMessage.Status update, int y, final int w) {
++        y = addWrapped("The table agreed. Fix the board, then press Done.", y, w, 1);
++        y = addClock(y, w);
++        y += 4;
++
++        final TakeBackMessage.Tool[] tools = TakeBackMessage.Tool.values();
++        final int toolWidth = (w - TOOL_GAP) / 2;
++        for (int i = 0; i < tools.length; i++) {
++            final TakeBackMessage.Tool tool = tools[i];
++            final FButton button = new FButton(tool.getLabel());
++            button.setToolTipText(tool.getHint());
++            button.setCommand((UiCommand) () -> runTool(tool));
++            final int x = PADDING + (i % 2) * (toolWidth + TOOL_GAP);
++            add(button, x, y + (i / 2) * (TOOL_HEIGHT + TOOL_GAP), toolWidth, TOOL_HEIGHT);
++        }
++        y += ((tools.length + 1) / 2) * (TOOL_HEIGHT + TOOL_GAP) + 4;
++
++        return addCentered(new String[] { "Done" }, new Runnable[] { this::finish }, y);
++    }
++
++    /** What everyone else sees while the board is being fixed. */
++    private int layoutWatching(final TakeBackMessage.Status update, int y, final int w) {
++        y = addWrapped(update.requester().getName() + " is fixing the board. Cards and life may move.", y, w, 2);
++        y = addClock(y, w);
++        y += 4;
++        return addCentered(new String[] { "Hide" }, new Runnable[] { () -> setVisible(false) }, y);
++    }
++
++    private int layoutVoting(final TakeBackMessage.Status update, final PlayerView local, int y, final int w) {
++        final boolean mine = update.isRequester(local);
++        y = addWrapped(mine
++                ? "Waiting for the table to allow your take-back."
++                : update.requester().getName() + " asks to take back a play. Everyone has to agree.", y, w, 2);
++        for (final TakeBackMessage.Entry entry : update.entries()) {
++            final FLabel row = new FLabel.Builder()
++                    .text(entry.player().getName() + ": " + voteText(entry.vote()))
++                    .fontSize(12).fontAlign(SwingConstants.LEFT).build();
++            add(row, PADDING, y, w, ROW_HEIGHT);
++            y += ROW_HEIGHT;
++        }
++        y = addClock(y, w);
++        y += 6;
++
++        if (!mine && local != null && update.isPending(local)) {
++            return addCentered(new String[] { "Allow", "Refuse" },
++                    new Runnable[] { () -> vote(true), () -> vote(false) }, y);
++        }
++        if (mine) {
++            return addCentered(new String[] { "Cancel" }, new Runnable[] { this::finish }, y);
++        }
++        return addCentered(new String[] { "Hide" }, new Runnable[] { () -> setVisible(false) }, y);
++    }
++
++    private String resultText(final TakeBackMessage.Status update) {
++        final String who = update.requester().getName();
++        return switch (update.phase()) {
++            case DECLINED -> "The take-back was refused.";
++            case TIMED_OUT -> "Nobody answered " + who + "'s take-back request.";
++            case FINISHED -> who + " finished the take-back.";
++            case EXPIRED -> "The take-back window ran out.";
++            default -> "The take-back is over.";
++        };
++    }
++
++    private String voteText(final TakeBackMessage.Vote vote) {
++        return switch (vote) {
++            case ACCEPTED -> "allowed";
++            case DECLINED -> "refused";
++            case PENDING -> "deciding…";
++        };
++    }
++
++    private int addWrapped(final String text, int y, final int w, final int lines) {
++        final FLabel label = new FLabel.Builder()
++                .text("<html>" + text + "</html>")
++                .fontAlign(SwingConstants.LEFT).build();
++        add(label, PADDING, y, w, ROW_HEIGHT * lines);
++        return y + ROW_HEIGHT * lines + 4;
++    }
++
++    private int addClock(int y, final int w) {
++        clockLabel = new FLabel.Builder().text(clockText()).fontSize(12).fontAlign(SwingConstants.LEFT).build();
++        add(clockLabel, PADDING, y, w, ROW_HEIGHT);
++        return y + ROW_HEIGHT;
++    }
++
++    private int addCentered(final String[] labels, final Runnable[] actions, final int y) {
++        final int total = labels.length * BUTTON_WIDTH + (labels.length - 1) * PADDING;
++        int x = (WIDTH - total) / 2;
++        for (int i = 0; i < labels.length; i++) {
++            final Runnable action = actions[i];
++            final FButton button = new FButton(labels[i]);
++            button.setCommand((UiCommand) action::run);
++            add(button, x, y, BUTTON_WIDTH, BUTTON_HEIGHT);
++            x += BUTTON_WIDTH + PADDING;
++        }
++        return y + BUTTON_HEIGHT;
++    }
++
++    private void startClock(final int secondsLeft) {
++        deadlineMs = System.currentTimeMillis() + secondsLeft * 1000L;
++        if (!clock.isRunning()) {
++            clock.start();
++        }
++    }
++
++    private void tick() {
++        if (clockLabel != null) {
++            clockLabel.setText(clockText());
++        }
++    }
++
++    private String clockText() {
++        final long left = Math.max(0, deadlineMs - System.currentTimeMillis());
++        final long seconds = (left + 999) / 1000;
++        return String.format("%d:%02d left", seconds / 60, seconds % 60);
++    }
++
++    private void finishLayout(final int height) {
++        getContentPane().revalidate();
++        getContentPane().repaint();
++        pack(); // realize the title bar so its height is known before we size the frame
++        setSize(WIDTH, height + getTitleBar().getHeight() + PADDING);
++        if (!isVisible()) {
++            setLocationRelativeTo(null); // the resize above drops it in a corner otherwise
++            setVisible(true);
++        }
++    }
++
++    private void runTool(final TakeBackMessage.Tool tool) {
++        if (localPlayer != null) {
++            matchUI.getGameController(localPlayer).takeBackTool(tool);
++        }
++    }
++
++    private void vote(final boolean accept) {
++        final int before = refreshes;
++        if (localPlayer != null) {
++            matchUI.getGameController(localPlayer).takeBackAction(
++                    accept ? TakeBackMessage.Action.ACCEPT : TakeBackMessage.Action.DECLINE);
++        }
++        if (refreshes == before) {
++            // Nothing new arrived, so this was the tally: put it away. If the vote settled the
++            // request the broadcast has already rebuilt this dialog, and hiding it would take
++            // the fix-up tools (or the outcome) away again.
++            closeQuietly();
++        }
++    }
++
++    private void finish() {
++        holdsWindow = false;
++        if (localPlayer != null) {
++            matchUI.getGameController(localPlayer).takeBackAction(TakeBackMessage.Action.FINISH);
++        }
++        closingInternally = true;
++        dispose();
++        closingInternally = false;
++    }
++
++    private void closeQuietly() {
++        closingInternally = true;
++        setVisible(false);
++        closingInternally = false;
++    }
++
++    /** Closing the tool box from the title bar hands the window back instead of leaving it open. */
++    @Override
++    public void setVisible(final boolean visible) {
++        if (!visible && holdsWindow && !closingInternally) {
++            finish();
++            return;
++        }
++        super.setVisible(visible);
++    }
++
++    @Override
++    public void dispose() {
++        clock.stop();
++        super.dispose();
++    }
++}
+diff --git a/forge-gui/src/main/java/forge/gamemodes/match/TakeBackCoordinator.java b/forge-gui/src/main/java/forge/gamemodes/match/TakeBackCoordinator.java
+new file mode 100644
+index 0000000000..69f121f8d0
+--- /dev/null
++++ b/forge-gui/src/main/java/forge/gamemodes/match/TakeBackCoordinator.java
+@@ -0,0 +1,227 @@
++package forge.gamemodes.match;
++
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.WeakHashMap;
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.ScheduledFuture;
++import java.util.concurrent.TimeUnit;
++
++import forge.game.Game;
++import forge.game.GameLogEntryType;
++import forge.game.player.Player;
++import forge.gui.interfaces.IGuiGame;
++import forge.player.PlayerControllerHuman;
++
++/**
++ * Orchestrates a take-back: one player asks the table to fix the board, every other human has
++ * to say yes, and the requester then gets a short window in which the curated fix-up tools are
++ * unlocked for them. Nothing is rewound by the engine — the players correct the board by hand —
++ * so the only thing guarded here is who may touch those tools, and for how long.
++ *
++ * <p>All state lives on the host: a network client can only ask, vote, and run a tool, and the
++ * host checks {@link #isGranted} before it lets any tool through.</p>
++ */
++public final class TakeBackCoordinator {
++    /** How long the table has to answer a request. */
++    public static final int VOTE_SECONDS = 60;
++    /** How long the requester may use the fix-up tools once the table agrees. */
++    public static final int GRANT_SECONDS = 120;
++
++    private TakeBackCoordinator() {}
++
++    private static final Map<Game, Session> SESSIONS = new WeakHashMap<>();
++
++    private static final ScheduledExecutorService TIMER = Executors.newSingleThreadScheduledExecutor(r -> {
++        final Thread t = new Thread(r, "take-back-timer");
++        t.setDaemon(true);
++        return t;
++    });
++
++    private static final class Session {
++        private final Player requester;
++        private final Map<Player, TakeBackMessage.Vote> votes = new LinkedHashMap<>();
++        private TakeBackMessage.Phase phase = TakeBackMessage.Phase.VOTING;
++        private long deadlineMs;
++        private ScheduledFuture<?> alarm;
++
++        Session(final Player requester) {
++            this.requester = requester;
++        }
++
++        boolean isExpired() {
++            return System.currentTimeMillis() >= deadlineMs;
++        }
++
++        int secondsLeft() {
++            return (int) Math.max(0, (deadlineMs - System.currentTimeMillis() + 999) / 1000);
++        }
++
++        void setClock(final int seconds, final Runnable onTimeout) {
++            cancelAlarm();
++            deadlineMs = System.currentTimeMillis() + seconds * 1000L;
++            alarm = TIMER.schedule(onTimeout, seconds, TimeUnit.SECONDS);
++        }
++
++        void cancelAlarm() {
++            if (alarm != null) {
++                alarm.cancel(false);
++                alarm = null;
++            }
++        }
++    }
++
++    /** Called when a player activates Request Take-Back. Ignored if one is already in flight. */
++    public static synchronized void request(final Game game, final Player requester) {
++        if (game == null || requester == null || game.isGameOver()) {
++            return;
++        }
++        final Session existing = SESSIONS.get(game);
++        if (existing != null) {
++            if (!existing.isExpired()) {
++                return; // one at a time
++            }
++            // Its clock ran out without anyone noticing: close it before opening a new one.
++            end(game, existing, existing.phase == TakeBackMessage.Phase.GRANTED
++                    ? TakeBackMessage.Phase.EXPIRED : TakeBackMessage.Phase.TIMED_OUT, "The take-back window closed.");
++        }
++        final Session session = new Session(requester);
++        for (final Player p : game.getPlayers()) {
++            if (p != requester && p.getController() instanceof PlayerControllerHuman) {
++                session.votes.put(p, TakeBackMessage.Vote.PENDING);
++            }
++        }
++        SESSIONS.put(game, session);
++        log(game, requester.getName() + " asked for a take-back.");
++
++        if (session.votes.isEmpty()) {
++            grant(game, session); // only AI opponents left: nobody to ask
++            return;
++        }
++        session.setClock(VOTE_SECONDS, () -> timeOut(game, session));
++        broadcast(game, session);
++    }
++
++    /** Called when a human opponent answers. */
++    public static synchronized void respond(final Game game, final Player responder, final boolean accept) {
++        final Session session = SESSIONS.get(game);
++        if (session == null || session.phase != TakeBackMessage.Phase.VOTING
++                || !session.votes.containsKey(responder)) {
++            return; // stale
++        }
++        session.votes.put(responder, accept ? TakeBackMessage.Vote.ACCEPTED : TakeBackMessage.Vote.DECLINED);
++        if (!accept) {
++            end(game, session, TakeBackMessage.Phase.DECLINED, responder.getName() + " turned the take-back down.");
++            return;
++        }
++        // Somebody who has left the game can no longer answer, so don't wait for them.
++        session.votes.keySet().removeIf(p -> !game.getPlayers().contains(p));
++        if (session.votes.values().stream().allMatch(v -> v == TakeBackMessage.Vote.ACCEPTED)) {
++            grant(game, session);
++            return;
++        }
++        broadcast(game, session);
++    }
++
++    /** Called when the requester presses Done, or cancels a request nobody has answered yet. */
++    public static synchronized void finish(final Game game, final Player player) {
++        final Session session = SESSIONS.get(game);
++        if (session == null || session.requester != player) {
++            return;
++        }
++        end(game, session, TakeBackMessage.Phase.FINISHED, session.phase == TakeBackMessage.Phase.VOTING
++                ? player.getName() + " withdrew the take-back request."
++                : player.getName() + " finished the take-back.");
++    }
++
++    /**
++     * The gate every fix-up tool goes through on the host: true only while this player's own
++     * window is open. Also closes a window that ran out while nobody was looking.
++     */
++    public static synchronized boolean isGranted(final Game game, final Player player) {
++        final Session session = SESSIONS.get(game);
++        if (session == null || session.phase != TakeBackMessage.Phase.GRANTED || session.requester != player) {
++            return false;
++        }
++        if (session.isExpired()) {
++            expire(game, session);
++            return false;
++        }
++        return true;
++    }
++
++    /** True while any take-back is in flight, so a second request can be refused politely. */
++    public static synchronized boolean isBusy(final Game game) {
++        final Session session = SESSIONS.get(game);
++        return session != null && !session.isExpired()
++                && (session.phase == TakeBackMessage.Phase.VOTING || session.phase == TakeBackMessage.Phase.GRANTED);
++    }
++
++    private static void grant(final Game game, final Session session) {
++        session.phase = TakeBackMessage.Phase.GRANTED;
++        session.setClock(GRANT_SECONDS, () -> expireLater(game, session));
++        log(game, "Take-back granted to " + session.requester.getName() + " for "
++                + GRANT_SECONDS + " seconds.");
++        broadcast(game, session);
++    }
++
++    private static void expireLater(final Game game, final Session session) {
++        synchronized (TakeBackCoordinator.class) {
++            expire(game, session);
++        }
++    }
++
++    private static void expire(final Game game, final Session session) {
++        if (session.phase != TakeBackMessage.Phase.GRANTED) {
++            return;
++        }
++        end(game, session, TakeBackMessage.Phase.EXPIRED, "The take-back window closed.");
++    }
++
++    private static void timeOut(final Game game, final Session session) {
++        synchronized (TakeBackCoordinator.class) {
++            if (session.phase != TakeBackMessage.Phase.VOTING) {
++                return;
++            }
++            end(game, session, TakeBackMessage.Phase.TIMED_OUT, "Nobody answered the take-back request.");
++        }
++    }
++
++    private static void end(final Game game, final Session session, final TakeBackMessage.Phase phase,
++            final String message) {
++        session.cancelAlarm();
++        session.phase = phase;
++        session.deadlineMs = 0;
++        if (SESSIONS.get(game) == session) {
++            SESSIONS.remove(game); // a late alarm must not clear a newer request
++        }
++        log(game, message);
++        broadcast(game, session);
++    }
++
++    private static void broadcast(final Game game, final Session session) {
++        final List<TakeBackMessage.Entry> entries = new ArrayList<>();
++        for (final Map.Entry<Player, TakeBackMessage.Vote> e : session.votes.entrySet()) {
++            if (game.getPlayers().contains(e.getKey())) {
++                entries.add(new TakeBackMessage.Entry(e.getKey().getView(), e.getValue()));
++            }
++        }
++        final TakeBackMessage.Status update = new TakeBackMessage.Status(
++                session.requester.getView(), entries, session.phase, session.secondsLeft());
++        for (final Player p : game.getRegisteredPlayers()) {
++            if (p.getController() instanceof PlayerControllerHuman pch) {
++                final IGuiGame gui = pch.getGui();
++                if (gui != null) {
++                    gui.updateTakeBack(update);
++                }
++            }
++        }
++    }
++
++    private static void log(final Game game, final String message) {
++        game.getGameLog().add(GameLogEntryType.INFORMATION, message);
++    }
++}
+diff --git a/forge-gui/src/main/java/forge/gamemodes/match/TakeBackMessage.java b/forge-gui/src/main/java/forge/gamemodes/match/TakeBackMessage.java
+new file mode 100644
+index 0000000000..a211d291b9
+--- /dev/null
++++ b/forge-gui/src/main/java/forge/gamemodes/match/TakeBackMessage.java
+@@ -0,0 +1,84 @@
++package forge.gamemodes.match;
++
++import java.io.Serializable;
++import java.util.List;
++
++import forge.game.player.PlayerView;
++
++/**
++ * Take-back protocol payloads: the client {@link Action} and {@link Tool} commands and the
++ * server {@link Status} snapshot of the request.
++ */
++public final class TakeBackMessage {
++    private TakeBackMessage() {}
++
++    /** Client -> server command. */
++    public enum Action { REQUEST, ACCEPT, DECLINE, FINISH }
++
++    /** One opponent's answer to a request. */
++    public enum Vote { PENDING, ACCEPTED, DECLINED }
++
++    /** Where a request is in its life cycle. */
++    public enum Phase {
++        VOTING,
++        GRANTED,
++        /** Somebody voted no. */
++        DECLINED,
++        /** Nobody voted in time. */
++        TIMED_OUT,
++        /** The requester pressed Done. */
++        FINISHED,
++        /** The window ran out. */
++        EXPIRED
++    }
++
++    /** The curated board fix-ups a player may run while a take-back is granted. */
++    public enum Tool {
++        UNTAP("Untap permanents", "Pick permanents to untap."),
++        TAP("Tap permanents", "Pick permanents to tap."),
++        MOVE_CARD("Move a card", "Move one card to another zone."),
++        SET_LIFE("Set life total", "Set a player's life to a number."),
++        ADD_COUNTERS("Add counters", "Put counters on a permanent."),
++        REMOVE_COUNTERS("Remove counters", "Take counters off a permanent."),
++        MANA("Refill mana", "Add mana of every color to the pool of the player with priority.");
++
++        private final String label;
++        private final String hint;
++
++        Tool(final String label, final String hint) {
++            this.label = label;
++            this.hint = hint;
++        }
++
++        public String getLabel() {
++            return label;
++        }
++
++        public String getHint() {
++            return hint;
++        }
++    }
++
++    public record Entry(PlayerView player, Vote vote) implements Serializable {}
++
++    /**
++     * Server -> client snapshot: who asked, how every other human voted, where the request
++     * stands and how many seconds are left on the current clock (voting or granted window).
++     */
++    public record Status(PlayerView requester, List<Entry> entries, Phase phase, int secondsLeft)
++            implements Serializable {
++        public boolean isPending(final PlayerView player) {
++            return player != null && entries.stream()
++                    .anyMatch(e -> player.equals(e.player()) && e.vote() == Vote.PENDING);
++        }
++
++        public boolean isRequester(final PlayerView player) {
++            return player != null && player.equals(requester);
++        }
++
++        /** True once the request is over, however it ended. */
++        public boolean isOver() {
++            return phase != Phase.VOTING && phase != Phase.GRANTED;
++        }
++    }
++}
+diff --git a/forge-gui/src/main/java/forge/gamemodes/net/ProtocolMethod.java b/forge-gui/src/main/java/forge/gamemodes/net/ProtocolMethod.java
+index 680b85e2c2..ad81709193 100644
+--- a/forge-gui/src/main/java/forge/gamemodes/net/ProtocolMethod.java
++++ b/forge-gui/src/main/java/forge/gamemodes/net/ProtocolMethod.java
+@@ -10,6 +10,7 @@ import forge.game.player.PlayerView;
+ import forge.game.spellability.SpellAbilityView;
+ import forge.gamemodes.match.DrawOfferMessage;
+ import forge.gamemodes.match.NextGameDecision;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldUpdate;
+ import forge.gui.interfaces.IGuiGame;
+ import forge.gui.interfaces.IGuiGame.OrderResult;
+@@ -36,6 +37,7 @@ public enum ProtocolMethod implements IHasForgeLog {
+     showCombat          (Mode.SERVER, Void.TYPE),
+     showPromptMessage   (Mode.SERVER, Void.TYPE, PlayerView.class, String.class, CardView.class),
+     updateDrawOffer     (Mode.SERVER, Void.TYPE, DrawOfferMessage.Status.class),
++    updateTakeBack      (Mode.SERVER, Void.TYPE, TakeBackMessage.Status.class),
+     updateButtons       (Mode.SERVER, Void.TYPE, PlayerView.class, String.class, String.class, Boolean.TYPE, Boolean.TYPE, Boolean.TYPE),
+     flashIncorrectAction(Mode.SERVER, Void.TYPE),
+     alertUser           (Mode.SERVER, Void.TYPE),
+@@ -91,6 +93,8 @@ public enum ProtocolMethod implements IHasForgeLog {
+     getActivateDescription    (Mode.CLIENT, String.class, CardView.class),
+     concede                   (Mode.CLIENT, Void.TYPE),
+     drawOfferAction           (Mode.CLIENT, Void.TYPE, DrawOfferMessage.Action.class),
++    takeBackAction            (Mode.CLIENT, Void.TYPE, TakeBackMessage.Action.class),
++    takeBackTool              (Mode.CLIENT, Void.TYPE, TakeBackMessage.Tool.class),
+     alphaStrike               (Mode.CLIENT, Void.TYPE),
+     reorderHand               (Mode.CLIENT, Void.TYPE, CardView.class, Integer.TYPE),
+     requestResync             (Mode.CLIENT, Void.TYPE),
+diff --git a/forge-gui/src/main/java/forge/gamemodes/net/client/NetGameController.java b/forge-gui/src/main/java/forge/gamemodes/net/client/NetGameController.java
+index f82c81714c..714bb2cacb 100644
+--- a/forge-gui/src/main/java/forge/gamemodes/net/client/NetGameController.java
++++ b/forge-gui/src/main/java/forge/gamemodes/net/client/NetGameController.java
+@@ -7,6 +7,7 @@ import forge.game.player.actions.PlayerAction;
+ import forge.game.spellability.SpellAbilityView;
+ import forge.gamemodes.match.DrawOfferMessage;
+ import forge.gamemodes.match.NextGameDecision;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldController;
+ import forge.gamemodes.match.YieldUpdate;
+ import forge.gamemodes.net.GameProtocolSender;
+@@ -111,6 +112,17 @@ public class NetGameController implements IGameController {
+         send(ProtocolMethod.drawOfferAction, action);
+     }
+ 
++    @Override
++    public void takeBackAction(final TakeBackMessage.Action action) {
++        send(ProtocolMethod.takeBackAction, action);
++    }
++
++    @Override
++    public void takeBackTool(final TakeBackMessage.Tool tool) {
++        // The host checks the grant before it runs anything, and prompts come back to this client.
++        send(ProtocolMethod.takeBackTool, tool);
++    }
++
+     @Override
+     public IDevModeCheats cheat() {
+         // No cheating in network games!
+diff --git a/forge-gui/src/main/java/forge/gamemodes/net/server/RemoteClientGuiGame.java b/forge-gui/src/main/java/forge/gamemodes/net/server/RemoteClientGuiGame.java
+index 15397accd4..ab3ce65340 100644
+--- a/forge-gui/src/main/java/forge/gamemodes/net/server/RemoteClientGuiGame.java
++++ b/forge-gui/src/main/java/forge/gamemodes/net/server/RemoteClientGuiGame.java
+@@ -340,6 +340,11 @@ public class RemoteClientGuiGame extends NetworkGuiGame implements IHasForgeLog
+         send(ProtocolMethod.updateDrawOffer, update);
+     }
+ 
++    @Override
++    public void updateTakeBack(final forge.gamemodes.match.TakeBackMessage.Status update) {
++        send(ProtocolMethod.updateTakeBack, update);
++    }
++
+     @Override
+     public void updateButtons(final PlayerView owner, final String label1, final String label2, final boolean enable1, final boolean enable2, final boolean focus1) {
+         send(ProtocolMethod.updateButtons, owner, label1, label2, enable1, enable2, focus1);
+diff --git a/forge-gui/src/main/java/forge/gui/interfaces/IGuiGame.java b/forge-gui/src/main/java/forge/gui/interfaces/IGuiGame.java
+index d1032bd88f..1f32154ce9 100644
+--- a/forge-gui/src/main/java/forge/gui/interfaces/IGuiGame.java
++++ b/forge-gui/src/main/java/forge/gui/interfaces/IGuiGame.java
+@@ -80,6 +80,9 @@ public interface IGuiGame {
+     /** Open or refresh the draw-offer dialog with the current tally. Default no-op for GUIs that don't render it. */
+     default void updateDrawOffer(DrawOfferMessage.Status update) { }
+ 
++    /** Take-back request/grant snapshot from the host. */
++    default void updateTakeBack(forge.gamemodes.match.TakeBackMessage.Status update) { }
++
+     default void updateButtons(final PlayerView owner, final boolean okEnabled, final boolean cancelEnabled, final boolean focusOk) {
+         updateButtons(owner, Localizer.getInstance().getMessage("lblOK"), Localizer.getInstance().getMessage("lblCancel"), okEnabled, cancelEnabled, focusOk);
+     }
+diff --git a/forge-gui/src/main/java/forge/interfaces/IGameController.java b/forge-gui/src/main/java/forge/interfaces/IGameController.java
+index c6c1f0b918..c99c4c190c 100644
+--- a/forge-gui/src/main/java/forge/interfaces/IGameController.java
++++ b/forge-gui/src/main/java/forge/interfaces/IGameController.java
+@@ -7,6 +7,7 @@ import forge.game.player.PlayerView;
+ import forge.game.spellability.SpellAbilityView;
+ import forge.gamemodes.match.DrawOfferMessage;
+ import forge.gamemodes.match.NextGameDecision;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldController;
+ import forge.gamemodes.match.YieldUpdate;
+ import forge.localinstance.properties.ForgePreferences.FPref;
+@@ -23,6 +24,12 @@ public interface IGameController {
+ 
+     void drawOfferAction(DrawOfferMessage.Action action);
+ 
++    /** Ask the table for a take-back, or answer/close one. */
++    void takeBackAction(TakeBackMessage.Action action);
++
++    /** Run one curated fix-up tool; the host refuses it unless this player's window is open. */
++    void takeBackTool(TakeBackMessage.Tool tool);
++
+     void alphaStrike();
+ 
+     void useMana(byte color);
+diff --git a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
+index 707635b9ae..ff976b8f75 100644
+--- a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
++++ b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
+@@ -63,6 +63,8 @@ import forge.gamemodes.match.DeclineScope;
+ import forge.gamemodes.match.DrawOfferCoordinator;
+ import forge.gamemodes.match.DrawOfferMessage;
+ import forge.gamemodes.match.NextGameDecision;
++import forge.gamemodes.match.TakeBackCoordinator;
++import forge.gamemodes.match.TakeBackMessage;
+ import forge.gamemodes.match.YieldController;
+ import forge.gamemodes.match.YieldUpdate;
+ import forge.gamemodes.match.input.*;
+@@ -3673,6 +3675,26 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
+         }
+     }
+ 
++    @Override
++    public void takeBackAction(final TakeBackMessage.Action action) {
++        switch (action) {
++            case REQUEST -> TakeBackCoordinator.request(getGame(), player);
++            case ACCEPT -> TakeBackCoordinator.respond(getGame(), player, true);
++            case DECLINE -> TakeBackCoordinator.respond(getGame(), player, false);
++            case FINISH -> TakeBackCoordinator.finish(getGame(), player);
++        }
++    }
++
++    @Override
++    public void takeBackTool(final TakeBackMessage.Tool tool) {
++        // Authoritative check: this runs on the host even when a remote client asked for it.
++        if (!TakeBackCoordinator.isGranted(getGame(), player)) {
++            getGui().message("The take-back window is closed.", "Take-back");
++            return;
++        }
++        TakeBackTools.run(this, tool);
++    }
++
+     @Override
+     public void awaitNextInput() {
+         getGui().awaitNextInput();
+diff --git a/forge-gui/src/main/java/forge/player/TakeBackTools.java b/forge-gui/src/main/java/forge/player/TakeBackTools.java
+new file mode 100644
+index 0000000000..5dceb714b0
+--- /dev/null
++++ b/forge-gui/src/main/java/forge/player/TakeBackTools.java
+@@ -0,0 +1,106 @@
++package forge.player;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++
++import forge.game.Game;
++import forge.game.GameEntityView;
++import forge.game.GameEntityViewMap;
++import forge.game.ability.AbilityKey;
++import forge.game.card.Card;
++import forge.game.card.CardView;
++import forge.game.player.Player;
++import forge.game.player.PlayerView;
++import forge.game.zone.ZoneType;
++import forge.gamemodes.match.TakeBackMessage;
++import forge.gui.interfaces.IGuiGame;
++
++/**
++ * The curated fix-up tools a player may run while the table has granted them a take-back.
++ *
++ * <p>Most of them are the matching Dev Mode action, which already prompts through the player's
++ * own GUI and therefore works for a network client too (the host runs their controller). The
++ * one addition is {@link #moveCard}, because putting an existing card back where it belongs is
++ * what a take-back is usually about, and Dev Mode can only conjure new copies.</p>
++ */
++public final class TakeBackTools {
++    private TakeBackTools() {}
++
++    private static final List<ZoneType> ZONES = Arrays.asList(
++            ZoneType.Battlefield, ZoneType.Hand, ZoneType.Graveyard, ZoneType.Exile,
++            ZoneType.Library, ZoneType.Command);
++
++    /** Runs one tool for {@code pch}. The caller must have checked the grant first. */
++    public static void run(final PlayerControllerHuman pch, final TakeBackMessage.Tool tool) {
++        switch (tool) {
++            case UNTAP -> pch.cheat().untapPermanents();
++            case TAP -> pch.cheat().tapPermanents();
++            case SET_LIFE -> pch.cheat().setPlayerLife();
++            case ADD_COUNTERS -> pch.cheat().addCountersToPermanent();
++            case REMOVE_COUNTERS -> pch.cheat().removeCountersFromPermanent();
++            case MANA -> pch.cheat().generateMana();
++            case MOVE_CARD -> moveCard(pch);
++        }
++    }
++
++    /** Asks for a card and a destination zone, then moves that card there. */
++    private static void moveCard(final PlayerControllerHuman pch) {
++        final IGuiGame gui = pch.getGui();
++        final Game game = pch.getGame();
++
++        final GameEntityViewMap<Player, PlayerView> players = GameEntityView.getMap(game.getPlayers());
++        final PlayerView pv = gui.oneOrNone("Move a card belonging to which player?", players.getTrackableKeys());
++        if (pv == null || !players.containsKey(pv)) {
++            return;
++        }
++        final Player owner = players.get(pv);
++
++        final ZoneType from = gui.oneOrNone("Move the card out of which zone?", new ArrayList<>(ZONES));
++        if (from == null) {
++            return;
++        }
++        final GameEntityViewMap<Card, CardView> cards = GameEntityView.getMap(owner.getCardsIn(from));
++        if (cards.isEmpty()) {
++            gui.message("No cards there.", "Take-back");
++            return;
++        }
++        final CardView cv = gui.oneOrNone("Move which card?", cards.getTrackableKeys());
++        if (cv == null || !cards.containsKey(cv)) {
++            return;
++        }
++        final Card card = cards.get(cv);
++
++        final List<ZoneType> destinations = new ArrayList<>(ZONES);
++        destinations.remove(from);
++        final ZoneType to = gui.oneOrNone("Move " + card.getName() + " to which zone?", destinations);
++        if (to == null) {
++            return;
++        }
++
++        if (to == ZoneType.Battlefield && !card.isPermanent()) {
++            gui.message(card.getName() + " can't sit on the battlefield.", "Take-back");
++            return;
++        }
++        final boolean toLibraryTop = to != ZoneType.Library
++                || gui.confirm(cv, "Put " + card.getName() + " on top of the library?", true,
++                        Arrays.asList("Top", "Bottom"));
++        final boolean sick = to == ZoneType.Battlefield && card.isCreature()
++                && gui.confirm(cv, "Should " + card.getName() + " have summoning sickness?");
++
++        game.getAction().invoke(() -> {
++            final Card moved;
++            if (to == ZoneType.Library && !toLibraryTop) {
++                moved = game.getAction().moveToBottomOfLibrary(card, null);
++            } else if (to == ZoneType.Library) {
++                moved = game.getAction().moveToLibrary(card, null);
++            } else {
++                moved = game.getAction().moveTo(to, card, null, AbilityKey.newMap());
++            }
++            if (moved != null && to == ZoneType.Battlefield && moved.isCreature()) {
++                moved.setSickness(sick);
++            }
++            game.getTriggerHandler().runWaitingTriggers();
++        });
++    }
++}
+-- 
+2.53.0
+

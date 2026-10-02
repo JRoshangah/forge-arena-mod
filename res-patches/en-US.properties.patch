@@ -1,6 +1,6 @@
 --- a/res/languages/en-US.properties
 +++ b/res/languages/en-US.properties
-@@ -196,11 +196,11 @@
+@@ -198,11 +198,11 @@
  nlCompactMainMenu=Enable for a space efficient sidebar that displays only one menu group at a time (REQUIRES RESTART).
  nlUseSentry=When enabled, automatically submits bug reports to developers.
  GamePlay=Gameplay

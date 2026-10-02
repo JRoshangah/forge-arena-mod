@@ -1,7 +1,7 @@
-From ba4a56fab6a2426ec3cacaed4889830eae56135f Mon Sep 17 00:00:00 2001
+From 88ce6f8d2268825053a493d79e31ad18e66fc20f Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Wed, 16 Sep 2026 15:51:00 -0400
-Subject: [PATCH 2/6] Add board-first match layout with Navy Gold styling
+Subject: [PATCH 2/7] Add board-first match layout with Navy Gold styling
 
 - Separate layout file (match_arena.xml) holding only the fields, hand,
   card preview and prompt; written on first use and selected per match
@@ -47,10 +47,10 @@ Subject: [PATCH 2/6] Add board-first match layout with Navy Gold styling
  create mode 100644 forge-gui-desktop/src/main/java/forge/screens/match/views/ArenaFieldPanel.java
 
 diff --git a/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java b/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
-index 0531d0a77a..b9a19fcca6 100644
+index d356d3de5f..8161c124b1 100644
 --- a/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
 +++ b/forge-gui-desktop/src/main/java/forge/gui/framework/FScreen.java
-@@ -263,12 +263,16 @@ public class FScreen {
+@@ -227,12 +227,16 @@ public class FScreen {
      }
  
      public FileLocation getLayoutFile() {
@@ -83,10 +83,10 @@ index 1b973cb01e..cd626d44ae 100644
          SResizingUtil.resizeWindow();
      }
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
-index 5229a03ac2..b6f719c3de 100644
+index 077fe2f394..365aaba072 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
-@@ -153,6 +153,7 @@ public enum CSubmenuPreferences implements ICDoc {
+@@ -154,6 +154,7 @@ public enum CSubmenuPreferences implements ICDoc {
          lstControls.add(Pair.of(view.getCbTokensInSeparateRow(), FPref.UI_TOKENS_IN_SEPARATE_ROW));
          lstControls.add(Pair.of(view.getCbPlayMats(), FPref.UI_PLAY_MATS));
          lstControls.add(Pair.of(view.getCbCardDepthEffects(), FPref.UI_CARD_DEPTH_EFFECTS));
@@ -95,10 +95,10 @@ index 5229a03ac2..b6f719c3de 100644
          lstControls.add(Pair.of(view.getCbTurnBanner(), FPref.UI_ARENA_TURN_BANNER));
          lstControls.add(Pair.of(view.getCbLifePopups(), FPref.UI_ARENA_LIFE_POPUPS));
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
-index 8ab7eace62..d67653b966 100644
+index 290d42f2c2..2b3d6e4296 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
-@@ -123,6 +123,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -124,6 +124,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
      private final JCheckBox cbTokensInSeparateRow = new OptionsCheckBox(localizer.getMessage("cbTokensInSeparateRow"));
      private final JCheckBox cbPlayMats = new OptionsCheckBox("Battlefield Play-Mats");
      private final JCheckBox cbCardDepthEffects = new OptionsCheckBox("Card Shadows and Dimmed Tapped Cards");
@@ -106,7 +106,7 @@ index 8ab7eace62..d67653b966 100644
      private final JCheckBox cbPlayableGlow = new OptionsCheckBox("Glowing Playable Cards");
      private final JCheckBox cbTurnBanner = new OptionsCheckBox("Turn Banner");
      private final JCheckBox cbLifePopups = new OptionsCheckBox("Floating Life Changes");
-@@ -387,6 +388,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -389,6 +390,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          // Arena-style board
          pnlPrefs.add(new SectionLabel("Arena-Style Board"), sectionConstraints + ", gaptop 2%");
  
@@ -116,7 +116,7 @@ index 8ab7eace62..d67653b966 100644
          pnlPrefs.add(cbPlayMats, titleConstraints);
          pnlPrefs.add(new NoteLabel("Draws a tinted mat behind each battlefield (blue for you, red for opponents) with a darker band under land rows."), descriptionConstraints);
  
-@@ -1176,6 +1180,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -1192,6 +1196,7 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          return cbCardDepthEffects;
      }
  
@@ -1043,10 +1043,10 @@ index 9203430b80..973eebf381 100644
          Rectangle area = null;
          for (int k = 0; k < shown; k++) {
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
-index 04ef3d7d85..bf7b4b3b8f 100644
+index 938dcc6e10..52553e8bdc 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
-@@ -176,6 +176,8 @@ public final class CMatchUI
+@@ -184,6 +184,8 @@ public final class CMatchUI
      private final CStack cStack = new CStack(this);
      private int nextNotifiableStackIndex = 0;
      private final PlayFeed playFeed = new PlayFeed(this);
@@ -1055,7 +1055,7 @@ index 04ef3d7d85..bf7b4b3b8f 100644
      private final BoardOverlay boardOverlay = new BoardOverlay(this);
      private String lastPromptMessage = "";
  
-@@ -334,6 +336,15 @@ public final class CMatchUI
+@@ -342,6 +344,15 @@ public final class CMatchUI
      public boolean isInputButtonEnabled() {
          return view.getBtnOK().isEnabled() || view.getBtnCancel().isEnabled();
      }
@@ -1071,7 +1071,7 @@ index 04ef3d7d85..bf7b4b3b8f 100644
      public CStack getCStack() {
          return cStack;
      }
-@@ -943,7 +954,12 @@ public final class CMatchUI
+@@ -965,7 +976,12 @@ public final class CMatchUI
          SDisplayUtil.showTab(nextField);
          cPrompt.updateText();
          repaintCardOverlays();
@@ -1085,7 +1085,7 @@ index 04ef3d7d85..bf7b4b3b8f 100644
      }
  
      @Override
-@@ -990,6 +1006,9 @@ public final class CMatchUI
+@@ -1014,6 +1030,9 @@ public final class CMatchUI
          FThreads.invokeInEdtNowOrLater(() -> {
              getCStack().update();
              boardOverlay.stackChanged();
@@ -1095,7 +1095,7 @@ index 04ef3d7d85..bf7b4b3b8f 100644
          });
      }
  
-@@ -1308,6 +1327,9 @@ public final class CMatchUI
+@@ -1322,6 +1341,9 @@ public final class CMatchUI
          FThreads.invokeInEdtNowOrLater(() -> {
              playFeed.detach();
              boardOverlay.detach();
@@ -1120,10 +1120,10 @@ index eed05b3989..1837c40a20 100644
          final int top = Math.max(0, anchor.y + TOP_OFFSET);
  
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
-index 7bbdf62f2c..b446c6502d 100644
+index 063ef2f29e..8e101cdffc 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/match/VMatchUI.java
-@@ -178,13 +178,13 @@ public class VMatchUI implements IVTopLevelUI {
+@@ -189,13 +189,13 @@ public class VMatchUI implements IVTopLevelUI {
              VField vField = lstFields.get(i);
              // Check if field is in a visible cell (not a stale reference from old layout)
              DragCell parentCell = vField.getParentCell();
@@ -1140,7 +1140,7 @@ index 7bbdf62f2c..b446c6502d 100644
                  if (fallbackCell != null) {
                      fallbackCell.addDoc(vField);
                  }
-@@ -210,14 +210,14 @@ public class VMatchUI implements IVTopLevelUI {
+@@ -221,14 +221,14 @@ public class VMatchUI implements IVTopLevelUI {
                  if (cellWithHandsFallback == null) {
                      cellWithHandsFallback = c;
                  }
@@ -1157,7 +1157,7 @@ index 7bbdf62f2c..b446c6502d 100644
          }
          // Last resort: use any hand cell even if not yet showing (e.g. during
          // initial game load before Swing has realized the components).
-@@ -243,7 +243,7 @@ public class VMatchUI implements IVTopLevelUI {
+@@ -254,7 +254,7 @@ public class VMatchUI implements IVTopLevelUI {
                  }
              } else {
                  // Hand present, add it if necessary (check isShowing for stale references)
@@ -1166,7 +1166,7 @@ index 7bbdf62f2c..b446c6502d 100644
                      final EDocID fieldDoc = EDocID.Fields[iHandId];
                      DragCell fieldCell = fieldDoc.getDoc().getParentCell();
                      if (fieldCell != null && (fieldCell.isShowing() || cellWithHands == null)) {
-@@ -268,6 +268,25 @@ public class VMatchUI implements IVTopLevelUI {
+@@ -279,6 +279,25 @@ public class VMatchUI implements IVTopLevelUI {
          });
      }
  
@@ -1915,10 +1915,10 @@ index 49c1f60ddf..eb7d742ab1 100644
          userPrefLoc = userPrefix + commonSuffix;
      }
 diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
-index 1d407a1b60..58af0b93a7 100644
+index c42f1f0690..c906e6051d 100644
 --- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
 +++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
-@@ -130,6 +130,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+@@ -132,6 +132,7 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
          UI_ARENA_HAND_FAN ("true"),
          UI_ARENA_OPPONENT_HAND ("true"),
          UI_ARENA_STACK_CARDS ("true"),
@@ -1927,5 +1927,5 @@ index 1d407a1b60..58af0b93a7 100644
          UI_DISPLAY_CURRENT_COLORS(ForgeConstants.DISP_CURRENT_COLORS_NEVER),
          UI_FILTER_LANDS_BY_COLOR_IDENTITY("true"),
 -- 
-2.43.0
+2.53.0
 

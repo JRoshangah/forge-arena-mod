@@ -7,7 +7,7 @@ A modded build of [Forge](https://github.com/Card-Forge/forge), the free Magic: 
 ## Download and play
 
 1. **Install Java 17 or newer.** If you don't have it, get [Temurin](https://adoptium.net) (choose the latest LTS for your system).
-2. **Download** `forge-arena-mod-1.2.zip` from the [latest release](../../releases/latest) (about 225 MB) and unzip it anywhere.
+2. **Download** `forge-arena-mod-2.0.zip` from the [latest release](../../releases/latest) and unzip it anywhere.
 3. **Start Forge** from the unzipped folder:
    - **Windows:** double-click `forge.exe`
    - **macOS:** double-click `forge.command`. The first time, right-click it and choose **Open**.
@@ -57,6 +57,7 @@ Everything below is on by default. Each item can be switched off in **Settings �
 **Rules and settings**
 - **Friendly mulligan:** mulligan as often as you like and always draw a full 7, with nothing put on the bottom. AI opponents stop after 3. You can switch back to London or another rule in Settings → Gameplay → Mulligan Rule.
 - **Commander damage switch:** Settings → Gameplay → **Commander Damage Loss** (on by default). Turn it off and 21 combat damage from one commander no longer knocks a player out; the damage is still counted and shown. In online games, the host's setting applies to everyone.
+- **Take-back:** **Game → Request Take-Back** asks the table to let you undo a misplay. Every other human has to allow it (60 seconds to answer), then you get a two-minute window with a small tool box: untap or tap permanents, move a card to another zone, set a life total, add or remove counters, refill mana. Everyone sees who is fixing the board and a countdown, and the game log records the request and the result. Against AI opponents only, it starts straight away. Nothing is rewound by the rules engine, so the table corrects the board by hand.
 - **Settings page:** a search box and section buttons that stay at the top while you scroll.
 
 ![Log drawer open](screenshots/drawer.jpg)
@@ -73,7 +74,7 @@ Forge itself still marks network play as a work in progress, so expect the occas
 
 ## Good to know
 
-- **Base version:** Forge **2.0.15-SNAPSHOT** (build of 2026-09-06, commit [`53a1037`](https://github.com/Card-Forge/forge/commit/53a103721d627ecb76a2ea52b2febe894844f288)).
+- **Base version:** Forge **2.0.15**, the official [Reality Fracture release](https://github.com/Card-Forge/forge/releases/tag/forge-2.0.15) (2026-09-28). The whole Reality Fracture set and its Commander decks are playable.
 - **What's included:** the regular desktop client only. Adventure mode and the mobile-style client aren't in the zip.
 - **Where your data goes:** settings, decks and downloaded card images are stored in your user profile (for example `~/.forge` and `~/.cache/forge` on Linux), not in the game folder. Replacing the folder with a newer mod version keeps them.
 - **Stock-style screen:** to go back to the classic panel layout, turn off **Board-First Match Layout**; the change applies from the next game.
@@ -84,7 +85,7 @@ Forge is licensed under the GNU GPL v3, and so is this mod (see [LICENSE](LICENS
 
 | Path | What it contains |
 |---|---|
-| `patches/` | The Java changes as `git format-patch` files, to apply on top of Forge commit `53a1037` |
+| `patches/` | The Java changes as `git format-patch` files, to apply on top of Forge tag `forge-2.0.15` |
 | `res-patches/` | Wording changes to `res/languages/en-US.properties`, and `res/defaults/window.xml` so a first start opens maximized |
 | `skins/navy_gold/` | The Navy Gold skin, which goes in `res/skins/navy_gold/` |
 | `tools/make_navy_gold.py` | Script that generates the skin (needs Python 3 and Pillow) |
@@ -94,7 +95,7 @@ To build from source:
 ```sh
 git clone https://github.com/Card-Forge/forge.git
 cd forge
-git checkout -b arena-mod 53a103721d627ecb76a2ea52b2febe894844f288
+git checkout -b arena-mod forge-2.0.15
 git am /path/to/forge-arena-mod/patches/*.patch
 git apply --directory=forge-gui /path/to/forge-arena-mod/res-patches/*.patch
 mkdir -p forge-gui/res/skins/navy_gold

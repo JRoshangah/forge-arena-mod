@@ -1,7 +1,7 @@
-From 5e52e1fe67deb36a34eab5cfd9112aedb3e03976 Mon Sep 17 00:00:00 2001
+From 24a61c3ed9ae16436c540bddeafc3b50969b3156 Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Thu, 17 Sep 2026 13:33:56 -0400
-Subject: [PATCH 6/6] Fix settings jump bar overflow, uneven action buttons and
+Subject: [PATCH 6/7] Fix settings jump bar overflow, uneven action buttons and
  stray panels
 
 - Settings section buttons pick a column count that fits the window and
@@ -38,7 +38,7 @@ index cd626d44ae..23ebae7b2e 100644
          XMLEventWriter writer = null;
          try(FileOutputStream fos = new FileOutputStream(fWriteTo);) {
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
-index 291e570624..8c782fb876 100644
+index bb7d7b589a..0972e08200 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
 @@ -51,7 +51,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
@@ -53,7 +53,7 @@ index 291e570624..8c782fb876 100644
      private static final javax.swing.border.Border JUMP_ACTIVE_BORDER = BorderFactory.createMatteBorder(0, 0, 3, 0, new Color(255, 190, 70));
      private static final javax.swing.border.Border JUMP_IDLE_BORDER = BorderFactory.createEmptyBorder(0, 0, 3, 0);
      private final FScrollPane scrContent = new FScrollPane(pnlPrefs, false,
-@@ -578,8 +581,6 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -586,8 +589,6 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          pnlHeader.setLayout(new MigLayout("insets 0, gap 0, wrap, fillx"));
          pnlHeader.add(getSearchPanel(), "w 80%!, h 28px!, gap 25px 0 6px 8px");
  
@@ -62,7 +62,7 @@ index 291e570624..8c782fb876 100644
          pnlJump.setOpaque(false);
          for (final Component comp : pnlPrefs.getComponents()) {
              if (!(comp instanceof SectionLabel)) {
-@@ -589,15 +590,50 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -597,15 +598,50 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
              final FLabel btn = new FLabel.Builder().opaque(true).hoverable(true).fontSize(12)
                      .text(header.getText()).tooltip(header.getText()).build();
              btn.setCommand((Runnable) () -> jumpTo(header));
@@ -303,5 +303,5 @@ index 0bb5bb2565..5e62f2f58c 100644
              final int cy = cell.getAbsY();
              final int cw = cell.getW();
 -- 
-2.43.0
+2.53.0
 

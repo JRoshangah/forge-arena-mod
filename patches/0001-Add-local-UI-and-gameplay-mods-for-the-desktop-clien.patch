@@ -1,7 +1,7 @@
-From cd41ca2043927e773b20a4afef6a5a9bea294cda Mon Sep 17 00:00:00 2001
+From ac4f41fed9edd256ff80125c9c55ae62701772eb Mon Sep 17 00:00:00 2001
 From: jrosha <114847463+JRoshangah@users.noreply.github.com>
 Date: Wed, 16 Sep 2026 15:16:10 -0400
-Subject: [PATCH 1/6] Add local UI and gameplay mods for the desktop client
+Subject: [PATCH 1/7] Add local UI and gameplay mods for the desktop client
 
 - Friendly mulligan rule: unlimited mulligans back to a full hand with
   nothing put on the bottom; AI players stop after three.
@@ -103,10 +103,10 @@ index 3e795bacad..78e4babb37 100644
                      mulligan = new VancouverMulligan(player, firstMullFree);
                      break;
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
-index 16f0590612..5229a03ac2 100644
+index 429effb2fe..077fe2f394 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/CSubmenuPreferences.java
-@@ -21,6 +21,7 @@ import forge.menus.LayoutMenu;
+@@ -22,6 +22,7 @@ import forge.menus.LayoutMenu;
  import forge.model.FModel;
  import forge.player.GamePlayerUtil;
  import forge.screens.deckeditor.CDeckEditorUI;
@@ -114,7 +114,7 @@ index 16f0590612..5229a03ac2 100644
  import forge.screens.deckeditor.controllers.CEditorTokenViewer;
  import forge.sound.MusicPlaylist;
  import forge.sound.SoundSystem;
-@@ -150,6 +151,15 @@ public enum CSubmenuPreferences implements ICDoc {
+@@ -151,6 +152,15 @@ public enum CSubmenuPreferences implements ICDoc {
          lstControls.add(Pair.of(view.getCbCardTextHideReminder(), FPref.UI_CARD_IMAGE_RENDER_HIDE_REMINDER_TEXT));
          lstControls.add(Pair.of(view.getCbOpenPacksIndiv(), FPref.UI_OPEN_PACKS_INDIV));
          lstControls.add(Pair.of(view.getCbTokensInSeparateRow(), FPref.UI_TOKENS_IN_SEPARATE_ROW));
@@ -130,7 +130,7 @@ index 16f0590612..5229a03ac2 100644
          lstControls.add(Pair.of(view.getCbSeparateCombatStacks(), FPref.UI_SEPARATE_COMBAT_STACKS));
          lstControls.add(Pair.of(view.getCbManaLostPrompt(), FPref.UI_MANA_LOST_PROMPT));
          lstControls.add(Pair.of(view.getCbEscapeEndsTurn(), FPref.UI_ALLOW_ESC_TO_END_TURN));
-@@ -553,8 +563,8 @@ public enum CSubmenuPreferences implements ICDoc {
+@@ -595,8 +605,8 @@ public enum CSubmenuPreferences implements ICDoc {
      }
  
      private void initializeStackAdditionsComboBox() {
@@ -142,7 +142,7 @@ index 16f0590612..5229a03ac2 100644
          final FComboBoxPanel<String> panel = this.view.getCbpStackAdditionsComboBoxPanel();
          final FComboBox<String> comboBox = createComboBox(elems, userSetting);
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
-index f2db42391a..8ab7eace62 100644
+index 4fbc963e2a..290d42f2c2 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/home/settings/VSubmenuPreferences.java
 @@ -49,6 +49,11 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
@@ -157,7 +157,7 @@ index f2db42391a..8ab7eace62 100644
      private final FScrollPane scrContent = new FScrollPane(pnlPrefs, false,
      ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
  
-@@ -116,6 +121,15 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -117,6 +122,15 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
      private final JCheckBox cbCardTextHideReminder = new OptionsCheckBox(localizer.getMessage("cbCardTextHideReminder"));
      private final JCheckBox cbOpenPacksIndiv = new OptionsCheckBox(localizer.getMessage("cbOpenPacksIndiv"));
      private final JCheckBox cbTokensInSeparateRow = new OptionsCheckBox(localizer.getMessage("cbTokensInSeparateRow"));
@@ -173,7 +173,7 @@ index f2db42391a..8ab7eace62 100644
      private final JCheckBox cbSeparateCombatStacks = new OptionsCheckBox(localizer.getMessage("cbSeparateCombatStacks"));
      private final JCheckBox cbFilterLandsByColorId = new OptionsCheckBox(localizer.getMessage("cbFilterLandsByColorId"));
      private final JCheckBox cbShowStormCount = new OptionsCheckBox(localizer.getMessage("cbShowStormCount"));
-@@ -180,25 +194,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -182,25 +196,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          final String comboBoxConstraints = "w 80%!, h 25px!, gap 25px 0 0 0px, span 2 1";
          final String descriptionConstraints = "w 80%!, h pref!, gap 28px 0 0 20px, span 2 1";
  
@@ -202,7 +202,7 @@ index f2db42391a..8ab7eace62 100644
  
          pnlPrefs.add(cbpAutoUpdater, comboBoxConstraints);
          pnlPrefs.add(new NoteLabel(localizer.getMessage("nlAutoUpdater")), descriptionConstraints);
-@@ -385,6 +384,36 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -387,6 +386,36 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          pnlPrefs.add(cbAiPicker, titleConstraints);
          pnlPrefs.add(new NoteLabel(localizer.getMessage("nlAiPickerSettings")), descriptionConstraints);
  
@@ -239,7 +239,7 @@ index f2db42391a..8ab7eace62 100644
          // Graphic Options
          pnlPrefs.add(new SectionLabel(localizer.getMessage("GraphicOptions")), sectionConstraints + ", gaptop 2%");
  
-@@ -515,9 +544,79 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -523,9 +552,79 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
              shortcutFields.put(s.getPrefKey(), field);
          }
  
@@ -319,7 +319,7 @@ index f2db42391a..8ab7eace62 100644
      }
  
      public void reloadShortcuts() {
-@@ -533,8 +632,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -541,8 +640,9 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
      public void populate() {
          VHomeUI.SINGLETON_INSTANCE.getPnlDisplay().removeAll();
  
@@ -331,7 +331,7 @@ index f2db42391a..8ab7eace62 100644
  
          VHomeUI.SINGLETON_INSTANCE.getPnlDisplay().repaintSelf();
          VHomeUI.SINGLETON_INSTANCE.getPnlDisplay().revalidate();
-@@ -1068,6 +1168,22 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -1084,6 +1184,22 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
          return cbTokensInSeparateRow;
      }
  
@@ -354,7 +354,7 @@ index f2db42391a..8ab7eace62 100644
      public final JCheckBox getCbSeparateCombatStacks() {
          return cbSeparateCombatStacks;
      }
-@@ -1365,6 +1481,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
+@@ -1381,6 +1497,10 @@ public enum VSubmenuPreferences implements IVSubmenu<CSubmenuPreferences> {
              }
  
              section.header.setVisible(hasVisibleItem);
@@ -1052,10 +1052,10 @@ index 0000000000..9203430b80
 +    }
 +}
 diff --git a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
-index 48dd163726..04ef3d7d85 100644
+index a09a95dbde..938dcc6e10 100644
 --- a/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
 +++ b/forge-gui-desktop/src/main/java/forge/screens/match/CMatchUI.java
-@@ -175,6 +175,8 @@ public final class CMatchUI
+@@ -183,6 +183,8 @@ public final class CMatchUI
      private final CPrompt cPrompt = new CPrompt(this);
      private final CStack cStack = new CStack(this);
      private int nextNotifiableStackIndex = 0;
@@ -1064,7 +1064,7 @@ index 48dd163726..04ef3d7d85 100644
      private String lastPromptMessage = "";
  
      public CMatchUI() {
-@@ -378,6 +380,9 @@ public final class CMatchUI
+@@ -386,6 +388,9 @@ public final class CMatchUI
          final List<VField> fields = new ArrayList<>();
          Singletons.getView().getLpnDocument().add(targetingOverlay.getPanel(), FView.TARGETING_LAYER);
          targetingOverlay.getPanel().setSize(Singletons.getControl().getDisplaySize());
@@ -1074,7 +1074,7 @@ index 48dd163726..04ef3d7d85 100644
  
          int i = 0;
          for (final PlayerView p : sortedPlayers) {
-@@ -543,6 +548,7 @@ public final class CMatchUI
+@@ -555,6 +560,7 @@ public final class CMatchUI
                      updateHand = true;
                      updateZones = true;
                      FloatingZone.refresh(owner, zone);
@@ -1082,7 +1082,7 @@ index 48dd163726..04ef3d7d85 100644
                      break;
                  default:
                      updateZones = true;
-@@ -638,6 +644,8 @@ public final class CMatchUI
+@@ -632,6 +638,8 @@ public final class CMatchUI
          for (final PlayerView p : livesUpdate) {
              getFieldViewFor(p).updateDetails();
          }
@@ -1091,7 +1091,7 @@ index 48dd163726..04ef3d7d85 100644
      }
  
      @Override
-@@ -935,6 +943,7 @@ public final class CMatchUI
+@@ -957,6 +965,7 @@ public final class CMatchUI
          SDisplayUtil.showTab(nextField);
          cPrompt.updateText();
          repaintCardOverlays();
@@ -1099,7 +1099,7 @@ index 48dd163726..04ef3d7d85 100644
      }
  
      @Override
-@@ -978,7 +987,10 @@ public final class CMatchUI
+@@ -1002,7 +1011,10 @@ public final class CMatchUI
  
      @Override
      public void updateStack() {
@@ -1111,7 +1111,7 @@ index 48dd163726..04ef3d7d85 100644
      }
  
      /**
-@@ -1294,6 +1306,8 @@ public final class CMatchUI
+@@ -1308,6 +1320,8 @@ public final class CMatchUI
          super.afterGameEnd();
          Singletons.getView().getLpnDocument().remove(targetingOverlay.getPanel());
          FThreads.invokeInEdtNowOrLater(() -> {
@@ -1120,7 +1120,7 @@ index 48dd163726..04ef3d7d85 100644
              Singletons.getView().getNavigationBar().closeTab(screen);
              LinkHandler.clearWeakReferencesNow();
          });
-@@ -1469,7 +1483,11 @@ public final class CMatchUI
+@@ -1478,7 +1492,11 @@ public final class CMatchUI
          boolean isTrigger = event.si().isTrigger();
          int stackIndex = event.stackIndex();
          if (stackIndex == nextNotifiableStackIndex) {
@@ -1133,7 +1133,7 @@ index 48dd163726..04ef3d7d85 100644
                  // We can go and show the modal
                  StackItemView si = event.si();
  
-@@ -1640,6 +1658,11 @@ public final class CMatchUI
+@@ -1649,6 +1667,11 @@ public final class CMatchUI
  
      @Override
      public void handleLandPlayed(CardView land) {
@@ -2557,10 +2557,10 @@ index 93e2bf91f6..6d7b2c6aed 100644
          List<CardStackRow> template = new ArrayList<>();
          
 diff --git a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
-index 50ae6b67d0..1d407a1b60 100644
+index 965e52deef..c42f1f0690 100644
 --- a/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
 +++ b/forge-gui/src/main/java/forge/localinstance/properties/ForgePreferences.java
-@@ -121,6 +121,15 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
+@@ -123,6 +123,15 @@ public class ForgePreferences extends AbstractPreferences<ForgePreferences.FPref
          UI_MANA_LOST_PROMPT ("false"),
          UI_STACK_EFFECT_NOTIFICATION_POLICY ("Never"),
          UI_LAND_PLAYED_NOTIFICATION_POLICY ("Never"),
@@ -2577,5 +2577,5 @@ index 50ae6b67d0..1d407a1b60 100644
          UI_DISPLAY_CURRENT_COLORS(ForgeConstants.DISP_CURRENT_COLORS_NEVER),
          UI_FILTER_LANDS_BY_COLOR_IDENTITY("true"),
 -- 
-2.43.0
+2.53.0
 
